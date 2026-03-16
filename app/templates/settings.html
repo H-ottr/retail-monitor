@@ -1,0 +1,263 @@
+{% extends "base.html" %}
+{% set active_page = 'settings' %}
+{% block title %}Settings — RetailGuard AI{% endblock %}
+{% block page_title %}Settings{% endblock %}
+
+{% block extra_head %}
+<style>
+  .settings-section { margin-bottom:24px; }
+  .setting-row {
+    display:flex; align-items:center; justify-content:space-between;
+    padding:16px 0; border-bottom:1px solid var(--border);
+  }
+  .setting-row:last-child { border-bottom:none; }
+  .setting-info .title { font-size:14px; font-weight:600; }
+  .setting-info .desc  { font-size:12px; color:var(--muted); margin-top:3px; }
+  .toggle-switch { cursor:pointer; position:relative; display:inline-block; width:44px; height:24px; }
+  .toggle-switch input { opacity:0; width:0; height:0; }
+  .ts-track { position:absolute; inset:0; background:#cbd5e1; border-radius:24px; transition:0.3s; }
+  .ts-thumb { position:absolute; top:3px; left:3px; width:18px; height:18px; background:#fff; border-radius:50%; transition:0.3s; box-shadow:0 1px 4px rgba(0,0,0,0.2); }
+  input:checked + .ts-track { background:var(--accent); }
+  input:checked ~ .ts-thumb { left:23px; }
+  .range-input { width:200px; accent-color:var(--accent); }
+  .select-input {
+    padding:7px 12px; border:1.5px solid var(--border);
+    border-radius:8px; font-size:13px; outline:none;
+    font-family:'Inter',sans-serif; background:var(--white);
+  }
+  .select-input:focus { border-color:var(--accent); }
+  .number-input {
+    width:80px; padding:7px 10px;
+    border:1.5px solid var(--border); border-radius:8px;
+    font-size:13px; outline:none; text-align:center;
+    font-family:'Inter',sans-serif;
+  }
+  .number-input:focus { border-color:var(--accent); }
+  .save-toast {
+    position:fixed; bottom:24px; right:24px;
+    background:#0f172a; color:#fff; padding:12px 20px;
+    border-radius:10px; font-size:14px; font-weight:500;
+    display:none; align-items:center; gap:8px;
+    box-shadow:0 4px 20px rgba(0,0,0,0.2); z-index:999;
+    animation:slideUp 0.3s ease;
+  }
+  @keyframes slideUp { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header flex-between">
+  <div>
+    <h2>Settings</h2>
+    <p>Configure system preferences and detection parameters</p>
+  </div>
+  <button class="btn btn-primary" onclick="saveSettings()">
+    <i class="fas fa-floppy-disk"></i> Save Changes
+  </button>
+</div>
+
+<div class="grid-2">
+  <!-- Camera Settings -->
+  <div class="card settings-section">
+    <div class="card-header">
+      <i class="fas fa-video" style="color:var(--accent)"></i>
+      <h3>Camera Configuration</h3>
+    </div>
+    <div class="card-body">
+      <div class="setting-row">
+        <div class="setting-info">
+          <div class="title">Camera Source</div>
+          <div class="desc">Select input camera device</div>
+        </div>
+        <select class="select-input" id="camSource">
+          <option value="0">Webcam (Device 0)</option>
+          <option value="1">External Camera (Device 1)</option>
+          <option value="rtsp">RTSP Stream</option>
+        </select>
+      </div>
+      <div class="setting-row">
+        <div class="setting-info">
+          <div class="title">RTSP Stream URL</div>
+          <div class="desc">For IP/surveillance cameras</div>
+        </div>
+        <input type="text" class="number-input" style="width:180px;text-align:left" id="rtspUrl" placeholder="rtsp://..."/>
+      </div>
+      <div class="setting-row">
+        <div class="setting-info">
+          <div class="title">Frame Resolution</div>
+          <div class="desc">Camera capture resolution</div>
+        </div>
+        <select class="select-input" id="resolution">
+          <option value="640x480">640 × 480</option>
+          <option value="1280x720" selected>1280 × 720 (HD)</option>
+          <option value="1920x1080">1920 × 1080 (Full HD)</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <!-- Detection Settings -->
+  <div class="card settings-section">
+    <div class="card-header">
+      <i class="fas fa-crosshairs" style="color:var(--accent-teal)"></i>
+      <h3>Detection Parameters</h3>
+    </div>
+    <div class="card-body">
+      <div class="setting-row">
+        <div class="setting-info">
+          <div class="title">Confidence Threshold</div>
+          <div class="desc">Minimum confidence to register detection</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px">
+          <input type="range" class="range-input" id="confThreshold" min="10" max="95" value="40"
+                 oninput="document.getElementById('confVal').textContent=this.value+'%'"/>
+          <span id="confVal" style="font-size:13px;font-weight:600;width:38px;color:var(--accent)">40%</span>
+        </div>
+      </div>
+      <div class="setting-row">
+        <div class="setting-info">
+          <div class="title">IoU Threshold</div>
+          <div class="desc">Intersection-over-Union for NMS</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px">
+          <input type="range" class="range-input" id="iouThreshold" min="10" max="90" value="45"
+                 oninput="document.getElementById('iouVal').textContent=this.value+'%'"/>
+          <span id="iouVal" style="font-size:13px;font-weight:600;width:38px;color:var(--accent)">45%</span>
+        </div>
+      </div>
+      <div class="setting-row">
+        <div class="setting-info">
+          <div class="title">Loitering Timeout (sec)</div>
+          <div class="desc">Seconds before marking as loitering</div>
+        </div>
+        <input type="number" class="number-input" id="loiterTimeout" value="30" min="5" max="300"/>
+      </div>
+    </div>
+  </div>
+
+  <!-- Alert Settings -->
+  <div class="card settings-section">
+    <div class="card-header">
+      <i class="fas fa-bell" style="color:var(--warning)"></i>
+      <h3>Alert Notifications</h3>
+    </div>
+    <div class="card-body">
+      {% for label, desc, checked, id in [
+        ('Anomaly Beep Sound', 'Play audio alert when anomaly detected', True, 'alertSound'),
+        ('Visual Alert Flash', 'Flash on-screen warning overlay', True, 'visualFlash'),
+        ('Save Incident Frames', 'Capture screenshot for each incident', True, 'saveFrames'),
+        ('Email Notifications', 'Send email on critical events (configure SMTP)', False, 'emailNotif'),
+      ] %}
+      <div class="setting-row">
+        <div class="setting-info">
+          <div class="title">{{ label }}</div>
+          <div class="desc">{{ desc }}</div>
+        </div>
+        <label class="toggle-switch">
+          <input type="checkbox" id="{{ id }}" {% if checked %}checked{% endif %}/>
+          <span class="ts-track"></span>
+          <span class="ts-thumb"></span>
+        </label>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- Storage Settings -->
+  <div class="card settings-section">
+    <div class="card-header">
+      <i class="fas fa-database" style="color:var(--accent)"></i>
+      <h3>Storage & Data</h3>
+    </div>
+    <div class="card-body">
+      <div class="setting-row">
+        <div class="setting-info">
+          <div class="title">Max Stored Incidents</div>
+          <div class="desc">Older records auto-deleted when limit reached</div>
+        </div>
+        <input type="number" class="number-input" id="maxIncidents" value="10000"/>
+      </div>
+      <div class="setting-row">
+        <div class="setting-info">
+          <div class="title">Frame Retention (days)</div>
+          <div class="desc">Days to keep saved incident frames</div>
+        </div>
+        <input type="number" class="number-input" id="frameRetention" value="30" min="1" max="365"/>
+      </div>
+      <div class="setting-row">
+        <div class="setting-info">
+          <div class="title">Clear All Data</div>
+          <div class="desc">Delete all incidents and logs permanently</div>
+        </div>
+        <button class="btn btn-danger" onclick="clearData()">
+          <i class="fas fa-trash"></i> Clear
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Credentials -->
+<div class="card">
+  <div class="card-header">
+    <i class="fas fa-user-shield" style="color:var(--accent)"></i>
+    <h3>Default Credentials (Reference)</h3>
+  </div>
+  <div class="card-body">
+    <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:16px">
+      <div style="background:var(--bg-primary);padding:16px;border-radius:10px">
+        <div style="font-size:12px;color:var(--muted);margin-bottom:8px;font-weight:600;text-transform:uppercase">Admin Account</div>
+        <div style="font-size:14px"><strong>Username:</strong> admin</div>
+        <div style="font-size:14px"><strong>Password:</strong> admin123</div>
+        <div style="font-size:12px;color:var(--warning);margin-top:6px"><i class="fas fa-triangle-exclamation"></i> Change in production</div>
+      </div>
+      <div style="background:var(--bg-primary);padding:16px;border-radius:10px">
+        <div style="font-size:12px;color:var(--muted);margin-bottom:8px;font-weight:600;text-transform:uppercase">Staff Account</div>
+        <div style="font-size:14px"><strong>Username:</strong> staff</div>
+        <div style="font-size:14px"><strong>Password:</strong> staff123</div>
+        <div style="font-size:12px;color:var(--warning);margin-top:6px"><i class="fas fa-triangle-exclamation"></i> Change in production</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="save-toast" id="toast">
+  <i class="fas fa-circle-check" style="color:#22c55e"></i> Settings saved successfully
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  function saveSettings() {
+    const data = {
+      camSource: document.getElementById('camSource').value,
+      resolution: document.getElementById('resolution').value,
+      confThreshold: document.getElementById('confThreshold').value,
+      iouThreshold: document.getElementById('iouThreshold').value,
+      loiterTimeout: document.getElementById('loiterTimeout').value,
+      alertSound: document.getElementById('alertSound').checked,
+      visualFlash: document.getElementById('visualFlash').checked,
+      saveFrames: document.getElementById('saveFrames').checked,
+      emailNotif: document.getElementById('emailNotif').checked,
+      maxIncidents: document.getElementById('maxIncidents').value,
+      frameRetention: document.getElementById('frameRetention').value,
+    };
+    fetch('/api/settings/save', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(data)
+    }).then(() => {
+      const toast = document.getElementById('toast');
+      toast.style.display = 'flex';
+      setTimeout(() => toast.style.display = 'none', 3000);
+    });
+    // Apply sound setting globally
+    alertEnabled = document.getElementById('alertSound').checked;
+  }
+
+  function clearData() {
+    if (confirm('This will permanently delete ALL incidents and logs. Are you sure?')) {
+      alert('Data cleared. (Implement DELETE route in production)');
+    }
+  }
+</script>
+{% endblock %}

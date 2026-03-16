@@ -1,0 +1,314 @@
+{% extends "base.html" %}
+{% set active_page = 'live' %}
+{% block title %}Live Monitoring — RetailGuard AI{% endblock %}
+{% block page_title %}Live Monitoring{% endblock %}
+
+{% block extra_head %}
+<style>
+  .video-container {
+    background:#0f172a; border-radius:var(--radius);
+    overflow:hidden; position:relative;
+    aspect-ratio:16/9; width:100%;
+  }
+  .video-container img {
+    width:100%; height:100%; object-fit:cover; display:block;
+  }
+  .video-overlay {
+    position:absolute; top:0; left:0; right:0; bottom:0;
+    display:flex; align-items:center; justify-content:center;
+    background:rgba(15,23,42,0.85); flex-direction:column; gap:12px;
+  }
+  .video-overlay i { font-size:48px; color:#475569; }
+  .video-overlay p { color:#64748b; font-size:15px; }
+  .live-badge {
+    position:absolute; top:14px; left:14px;
+    background:var(--danger); color:#fff;
+    padding:4px 10px; border-radius:20px;
+    font-size:12px; font-weight:700;
+    display:flex; align-items:center; gap:6px;
+    animation:fadePulse 1.5s infinite;
+  }
+  @keyframes fadePulse { 0%,100%{opacity:1} 50%{opacity:0.7} }
+  .live-badge .dot { width:7px;height:7px;border-radius:50%;background:#fff; }
+  .controls-row { display:flex; gap:10px; flex-wrap:wrap; margin-top:16px; }
+  .detection-feed { display:flex; flex-direction:column; gap:8px; }
+  .det-item {
+    background:var(--bg-primary); border-radius:8px;
+    padding:10px 14px; font-size:13px;
+    border-left:3px solid transparent;
+    animation:slideIn 0.3s ease;
+  }
+  @keyframes slideIn { from{opacity:0;transform:translateX(10px)} to{opacity:1;transform:translateX(0)} }
+  .det-item.anomaly { border-left-color:var(--danger); background:#fef2f2; }
+  .det-item.normal  { border-left-color:var(--success); }
+  .det-item .det-beh { font-weight:600; }
+  .det-item .det-conf { color:var(--muted); font-size:12px; }
+
+  .alert-flash {
+    position:absolute; top:14px; right:14px;
+    background:var(--danger); color:#fff;
+    padding:8px 14px; border-radius:8px;
+    font-size:13px; font-weight:600;
+    display:none; align-items:center; gap:8px;
+    animation:flashAnim 0.5s ease;
+    max-width:260px;
+  }
+  @keyframes flashAnim { 0%{transform:scale(0.9);opacity:0} 100%{transform:scale(1);opacity:1} }
+  .conf-badge {
+    display:inline-block; padding:2px 8px;
+    border-radius:12px; font-size:11px; font-weight:700;
+    margin-left:6px;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header flex-between">
+  <div>
+    <h2>Live Monitoring</h2>
+    <p>Real-time camera feed with AI behavior detection</p>
+  </div>
+  <a href="/alerts" class="btn btn-outline">
+    <i class="fas fa-list"></i> View Incidents
+  </a>
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 300px;gap:20px;align-items:start">
+
+  <!-- Left: Video + Controls -->
+  <div>
+    <div class="card">
+      <div class="card-body" style="padding:16px">
+        <div class="video-container" id="videoContainer">
+          <div class="video-overlay" id="videoOverlay">
+            <i class="fas fa-video-slash"></i>
+            <p>Camera is not active. Click Start Camera to begin.</p>
+          </div>
+          <img id="liveVideo" src="" alt="Live Feed" style="display:none"/>
+          <div class="live-badge" id="liveBadge" style="display:none">
+            <span class="dot"></span> LIVE
+          </div>
+          <div class="alert-flash" id="alertFlash">
+            <i class="fas fa-triangle-exclamation"></i>
+            <span id="alertFlashText">Alert!</span>
+          </div>
+        </div>
+
+        <!-- Controls -->
+        <div class="controls-row">
+          <button class="btn btn-primary" id="btnStart" onclick="startCamera()">
+            <i class="fas fa-play"></i> Start Camera
+          </button>
+          <button class="btn btn-danger" id="btnStop" onclick="stopCamera()" disabled>
+            <i class="fas fa-stop"></i> Stop
+          </button>
+          <button class="btn btn-outline" id="btnPause" onclick="pauseCamera()" disabled>
+            <i class="fas fa-pause"></i> Pause
+          </button>
+          <button class="btn btn-teal" id="btnSnap" onclick="takeScreenshot()" disabled>
+            <i class="fas fa-camera"></i> Screenshot
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Right: Detection Panel -->
+  <div style="display:flex;flex-direction:column;gap:16px">
+
+    <!-- Status Card -->
+    <div class="card">
+      <div class="card-header">
+        <i class="fas fa-activity" style="color:var(--accent)"></i>
+        <h3>Detection Status</h3>
+      </div>
+      <div class="card-body" style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div style="text-align:center">
+          <div style="font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;margin-bottom:4px">Session FPS</div>
+          <div style="font-size:22px;font-weight:700;color:var(--accent)" id="fps-display">—</div>
+        </div>
+        <div style="text-align:center">
+          <div style="font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;margin-bottom:4px">Detections</div>
+          <div style="font-size:22px;font-weight:700;color:var(--text)" id="session-count">0</div>
+        </div>
+        <div style="text-align:center">
+          <div style="font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;margin-bottom:4px">Anomalies</div>
+          <div style="font-size:22px;font-weight:700;color:var(--danger)" id="anomaly-count">0</div>
+        </div>
+        <div style="text-align:center">
+          <div style="font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;margin-bottom:4px">Status</div>
+          <div style="font-size:14px;font-weight:700;color:var(--muted)" id="cam-text-status">Offline</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Sound Toggle -->
+    <div class="card">
+      <div class="card-body" style="display:flex;align-items:center;gap:12px">
+        <div style="flex:1">
+          <div style="font-size:13px;font-weight:600">Alert Sound</div>
+          <div style="font-size:12px;color:var(--muted)">Beep on anomaly</div>
+        </div>
+        <label style="cursor:pointer;position:relative;display:inline-block;width:44px;height:24px">
+          <input type="checkbox" id="soundToggle" checked style="opacity:0;width:0;height:0"/>
+          <span id="toggleTrack" style="position:absolute;inset:0;background:#cbd5e1;border-radius:24px;transition:0.3s;cursor:pointer"></span>
+          <span id="toggleThumb" style="position:absolute;top:3px;left:3px;width:18px;height:18px;background:#fff;border-radius:50%;transition:0.3s;box-shadow:0 1px 4px rgba(0,0,0,0.2)"></span>
+        </label>
+      </div>
+    </div>
+
+    <!-- Live Detections Feed -->
+    <div class="card" style="max-height:400px;overflow:hidden;display:flex;flex-direction:column">
+      <div class="card-header">
+        <i class="fas fa-wave-square" style="color:var(--accent-teal)"></i>
+        <h3>Live Detections</h3>
+      </div>
+      <div class="card-body" style="overflow-y:auto;flex:1;padding:12px">
+        <div class="detection-feed" id="detectionFeed">
+          <div style="color:var(--muted);font-size:13px;text-align:center;padding:20px">
+            Waiting for camera...
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  let sessionCount = 0, anomalyCount = 0;
+  let alertTimeout = null;
+  let paused = false;
+
+  // Toggle switch behavior
+  const toggle = document.getElementById('soundToggle');
+  const track  = document.getElementById('toggleTrack');
+  const thumb  = document.getElementById('toggleThumb');
+  toggle.addEventListener('change', () => {
+    alertEnabled = toggle.checked;
+    track.style.background = toggle.checked ? 'var(--accent)' : '#cbd5e1';
+    thumb.style.left = toggle.checked ? '23px' : '3px';
+  });
+  // Init toggle color
+  track.style.background = 'var(--accent)'; thumb.style.left = '23px';
+
+  function startCamera() {
+    fetch('/api/camera/start', {method:'POST'})
+      .then(r => r.json())
+      .then(d => {
+        if (d.status === 'started' || d.status === 'already_running') {
+          showVideo();
+        } else {
+          alert('Error: ' + (d.message || 'Cannot start camera'));
+        }
+      })
+      .catch(() => alert('Failed to connect to server'));
+  }
+
+  function showVideo() {
+    document.getElementById('videoOverlay').style.display = 'none';
+    const vid = document.getElementById('liveVideo');
+    vid.src = '/video_feed?' + Date.now();
+    vid.style.display = 'block';
+    document.getElementById('liveBadge').style.display = 'flex';
+    document.getElementById('btnStart').disabled = true;
+    document.getElementById('btnStop').disabled = false;
+    document.getElementById('btnPause').disabled = false;
+    document.getElementById('btnSnap').disabled = false;
+    document.getElementById('cam-text-status').textContent = 'Online';
+    document.getElementById('cam-text-status').style.color = 'var(--success)';
+    document.getElementById('fps-display').textContent = '~30';
+    updateCamStatus(true);
+  }
+
+  function stopCamera() {
+    fetch('/api/camera/stop', {method:'POST'})
+      .then(() => {
+        document.getElementById('liveVideo').style.display = 'none';
+        document.getElementById('liveVideo').src = '';
+        document.getElementById('videoOverlay').style.display = 'flex';
+        document.getElementById('liveBadge').style.display = 'none';
+        document.getElementById('btnStart').disabled = false;
+        document.getElementById('btnStop').disabled = true;
+        document.getElementById('btnPause').disabled = true;
+        document.getElementById('btnSnap').disabled = true;
+        document.getElementById('cam-text-status').textContent = 'Offline';
+        document.getElementById('cam-text-status').style.color = 'var(--muted)';
+        document.getElementById('fps-display').textContent = '—';
+        updateCamStatus(false);
+      });
+  }
+
+  function pauseCamera() {
+    fetch('/api/camera/pause', {method:'POST'})
+      .then(r => r.json())
+      .then(d => {
+        paused = d.status === 'paused';
+        const btn = document.getElementById('btnPause');
+        btn.innerHTML = paused
+          ? '<i class="fas fa-play"></i> Resume'
+          : '<i class="fas fa-pause"></i> Pause';
+        btn.className = paused ? 'btn btn-success' : 'btn btn-outline';
+        document.getElementById('cam-text-status').textContent = paused ? 'Paused' : 'Online';
+      });
+  }
+
+  function takeScreenshot() {
+    const vid = document.getElementById('liveVideo');
+    const canvas = document.createElement('canvas');
+    canvas.width = vid.naturalWidth || 640;
+    canvas.height = vid.naturalHeight || 480;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(vid, 0, 0);
+    const link = document.createElement('a');
+    link.download = 'screenshot_' + new Date().toISOString().replace(/[:.]/g,'_') + '.jpg';
+    link.href = canvas.toDataURL('image/jpeg', 0.9);
+    link.click();
+  }
+
+  const BEH_COLORS = {
+    'Normal':'var(--success)', 'Running':'var(--danger)',
+    'Loitering':'var(--warning)',
+    'Suspicious Shelf Interaction':'#eab308', 'Crowd Formation':'#a855f7'
+  };
+
+  function onAlertReceived(data) {
+    if (!data.detections || !data.detections.length) return;
+    const feed = document.getElementById('detectionFeed');
+
+    data.detections.forEach(det => {
+      sessionCount++;
+      if (det.is_anomaly) anomalyCount++;
+
+      // Add to feed
+      const item = document.createElement('div');
+      item.className = 'det-item' + (det.is_anomaly ? ' anomaly' : ' normal');
+      item.innerHTML = `
+        <div class="flex-between">
+          <span class="det-beh" style="color:${BEH_COLORS[det.behavior]||'#374151'}">${det.behavior}</span>
+          <span class="conf-badge" style="background:${det.is_anomaly?'#fee2e2':'#dcfce7'};color:${det.is_anomaly?'#991b1b':'#166534'}">
+            ${(det.confidence*100).toFixed(0)}%
+          </span>
+        </div>
+        <div class="det-conf">${new Date().toLocaleTimeString()}</div>
+      `;
+      feed.insertBefore(item, feed.firstChild);
+      // Keep only last 20
+      while (feed.children.length > 20) feed.removeChild(feed.lastChild);
+
+      // Flash alert if anomaly
+      if (det.is_anomaly) {
+        const flash = document.getElementById('alertFlash');
+        document.getElementById('alertFlashText').textContent = '⚠ ' + det.behavior + ' Detected!';
+        flash.style.display = 'flex';
+        if (alertTimeout) clearTimeout(alertTimeout);
+        alertTimeout = setTimeout(() => { flash.style.display = 'none'; }, 3000);
+      }
+    });
+
+    document.getElementById('session-count').textContent = sessionCount;
+    document.getElementById('anomaly-count').textContent = anomalyCount;
+  }
+</script>
+{% endblock %}

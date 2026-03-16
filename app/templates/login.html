@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Login — RetailGuard AI</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"/>
+  <style>
+    :root {
+      --accent:      #0ea5e9;
+      --accent-dark: #0284c7;
+      --teal:        #14b8a6;
+      --danger:      #ef4444;
+      --bg:          #f0f4f8;
+      --white:       #ffffff;
+      --text:        #0f172a;
+      --muted:       #64748b;
+      --border:      #e2e8f0;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      height: 100%; font-family: 'Inter', sans-serif;
+      background: var(--bg); color: var(--text);
+    }
+    body { display: flex; min-height: 100vh; }
+
+    /* ── Left Panel ── */
+    .left-panel {
+      flex: 1; background: #0f172a;
+      display: flex; flex-direction: column;
+      justify-content: center; align-items: center;
+      padding: 60px; position: relative; overflow: hidden;
+    }
+    .left-panel::before {
+      content: '';
+      position: absolute; inset: 0;
+      background: radial-gradient(ellipse at 30% 40%, rgba(14,165,233,0.15) 0%, transparent 60%),
+                  radial-gradient(ellipse at 70% 70%, rgba(20,184,166,0.10) 0%, transparent 50%);
+    }
+    .grid-overlay {
+      position: absolute; inset: 0;
+      background-image:
+        linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px);
+      background-size: 40px 40px;
+    }
+    .left-content { position: relative; z-index: 1; max-width: 380px; }
+    .brand-icon {
+      width: 60px; height: 60px; background: var(--accent);
+      border-radius: 16px; display: flex; align-items: center;
+      justify-content: center; margin-bottom: 24px;
+      box-shadow: 0 0 40px rgba(14,165,233,0.4);
+    }
+    .brand-icon i { font-size: 26px; color: #fff; }
+    .left-content h1 {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 34px; font-weight: 800; color: #fff;
+      line-height: 1.2; margin-bottom: 16px;
+    }
+    .left-content h1 span { color: var(--accent); }
+    .left-content p {
+      font-size: 15px; color: #94a3b8; line-height: 1.7; margin-bottom: 40px;
+    }
+    .feature-list { display: flex; flex-direction: column; gap: 12px; }
+    .feature-item {
+      display: flex; align-items: center; gap: 12px;
+      color: #e2e8f0; font-size: 14px;
+    }
+    .feature-item .fi-icon {
+      width: 32px; height: 32px; border-radius: 8px;
+      background: rgba(14,165,233,0.15); border: 1px solid rgba(14,165,233,0.3);
+      display: flex; align-items: center; justify-content: center;
+      color: var(--accent); font-size: 13px; flex-shrink: 0;
+    }
+    .behavior-tags {
+      display: flex; flex-wrap: wrap; gap: 8px; margin-top: 32px;
+    }
+    .b-tag {
+      padding: 5px 12px; border-radius: 20px; font-size: 12px; font-weight: 500;
+      border: 1px solid; backdrop-filter: blur(4px);
+    }
+    .b-tag.normal   { border-color: #22c55e; color: #22c55e; background: rgba(34,197,94,0.08); }
+    .b-tag.running  { border-color: #ef4444; color: #ef4444; background: rgba(239,68,68,0.08); }
+    .b-tag.loiter   { border-color: #f97316; color: #f97316; background: rgba(249,115,22,0.08); }
+    .b-tag.shelf    { border-color: #eab308; color: #eab308; background: rgba(234,179,8,0.08); }
+    .b-tag.crowd    { border-color: #a855f7; color: #a855f7; background: rgba(168,85,247,0.08); }
+
+    /* ── Right Panel ── */
+    .right-panel {
+      width: 480px; background: var(--white);
+      display: flex; flex-direction: column;
+      justify-content: center; align-items: center;
+      padding: 48px 56px;
+      box-shadow: -8px 0 40px rgba(0,0,0,0.08);
+    }
+    .login-box { width: 100%; max-width: 360px; }
+    .login-box .welcome {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 26px; font-weight: 700; color: var(--text);
+      margin-bottom: 6px;
+    }
+    .login-box .subtitle {
+      font-size: 14px; color: var(--muted); margin-bottom: 36px;
+    }
+
+    .form-group { margin-bottom: 20px; }
+    .form-group label {
+      display: block; font-size: 13px; font-weight: 600;
+      color: var(--text); margin-bottom: 7px;
+    }
+    .input-wrap {
+      position: relative;
+    }
+    .input-wrap i {
+      position: absolute; left: 14px; top: 50%;
+      transform: translateY(-50%); color: var(--muted); font-size: 14px;
+      pointer-events: none;
+    }
+    .input-wrap input {
+      width: 100%; padding: 12px 14px 12px 42px;
+      border: 1.5px solid var(--border); border-radius: 10px;
+      font-size: 14px; color: var(--text); background: #f8fafc;
+      outline: none; transition: all 0.2s;
+      font-family: 'Inter', sans-serif;
+    }
+    .input-wrap input:focus {
+      border-color: var(--accent); background: var(--white);
+      box-shadow: 0 0 0 3px rgba(14,165,233,0.12);
+    }
+    .input-wrap .toggle-pw {
+      position: absolute; right: 14px; top: 50%;
+      transform: translateY(-50%); color: var(--muted);
+      cursor: pointer; font-size: 14px; pointer-events: all;
+      transition: color 0.2s;
+    }
+    .input-wrap .toggle-pw:hover { color: var(--accent); }
+
+    .form-footer {
+      display: flex; align-items: center;
+      justify-content: space-between; margin-bottom: 24px;
+    }
+    .remember {
+      display: flex; align-items: center; gap: 7px;
+      font-size: 13px; color: var(--muted); cursor: pointer;
+    }
+    .remember input { accent-color: var(--accent); }
+    .forgot { font-size: 13px; color: var(--accent); text-decoration: none; }
+    .forgot:hover { text-decoration: underline; }
+
+    .btn-login {
+      width: 100%; padding: 13px;
+      background: var(--accent); color: #fff;
+      border: none; border-radius: 10px;
+      font-size: 15px; font-weight: 600;
+      cursor: pointer; transition: all 0.2s;
+      font-family: 'Inter', sans-serif;
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+    }
+    .btn-login:hover { background: var(--accent-dark); transform: translateY(-1px); box-shadow: 0 4px 16px rgba(14,165,233,0.4); }
+    .btn-login:active { transform: translateY(0); }
+
+    .error-box {
+      background: #fef2f2; border: 1px solid #fecaca;
+      border-left: 3px solid var(--danger);
+      border-radius: 8px; padding: 10px 14px;
+      font-size: 13px; color: #991b1b;
+      display: flex; align-items: center; gap: 8px;
+      margin-bottom: 20px;
+    }
+    .error-box i { color: var(--danger); }
+
+    .login-footer {
+      margin-top: 32px; text-align: center;
+      font-size: 12.5px; color: var(--muted);
+    }
+    .login-footer strong { color: var(--text); }
+    .divider {
+      display: flex; align-items: center; gap: 12px;
+      margin: 24px 0; color: var(--muted); font-size: 13px;
+    }
+    .divider::before, .divider::after {
+      content: ''; flex: 1; height: 1px; background: var(--border);
+    }
+
+    @media (max-width: 900px) {
+      .left-panel { display: none; }
+      .right-panel { width: 100%; box-shadow: none; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- Left branding panel -->
+<div class="left-panel">
+  <div class="grid-overlay"></div>
+  <div class="left-content">
+    <div class="brand-icon"><i class="fas fa-shield-halved"></i></div>
+    <h1>Retail<span>Guard</span> AI<br/>Monitoring</h1>
+    <p>AI-powered surveillance system that detects and classifies suspicious behaviors in your retail store in real time.</p>
+
+    <div class="feature-list">
+      <div class="feature-item">
+        <div class="fi-icon"><i class="fas fa-eye"></i></div>
+        Real-time behavior detection via YOLOv8
+      </div>
+      <div class="feature-item">
+        <div class="fi-icon"><i class="fas fa-bell"></i></div>
+        Instant visual & sound alerts for anomalies
+      </div>
+      <div class="feature-item">
+        <div class="fi-icon"><i class="fas fa-chart-pie"></i></div>
+        Analytics dashboard with detection trends
+      </div>
+      <div class="feature-item">
+        <div class="fi-icon"><i class="fas fa-database"></i></div>
+        Incident history & exportable logs
+      </div>
+    </div>
+
+    <div class="behavior-tags">
+      <span class="b-tag normal"><i class="fas fa-circle-check" style="margin-right:5px"></i>Normal</span>
+      <span class="b-tag running"><i class="fas fa-person-running" style="margin-right:5px"></i>Running</span>
+      <span class="b-tag loiter"><i class="fas fa-clock" style="margin-right:5px"></i>Loitering</span>
+      <span class="b-tag shelf"><i class="fas fa-boxes-stacked" style="margin-right:5px"></i>Suspicious Shelf</span>
+      <span class="b-tag crowd"><i class="fas fa-people-group" style="margin-right:5px"></i>Crowd Formation</span>
+    </div>
+  </div>
+</div>
+
+<!-- Right login panel -->
+<div class="right-panel">
+  <div class="login-box">
+    <div class="welcome">Welcome back</div>
+    <div class="subtitle">Sign in to access the monitoring dashboard</div>
+
+    {% if error %}
+    <div class="error-box">
+      <i class="fas fa-circle-exclamation"></i>
+      {{ error }}
+    </div>
+    {% endif %}
+
+    <form method="POST" action="/login" id="loginForm">
+      <div class="form-group">
+        <label for="username">Username</label>
+        <div class="input-wrap">
+          <i class="fas fa-user"></i>
+          <input type="text" id="username" name="username"
+                 placeholder="Enter your username"
+                 autocomplete="username" required/>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="password">Password</label>
+        <div class="input-wrap">
+          <i class="fas fa-lock"></i>
+          <input type="password" id="password" name="password"
+                 placeholder="Enter your password"
+                 autocomplete="current-password" required/>
+          <i class="fas fa-eye toggle-pw" id="togglePw"></i>
+        </div>
+      </div>
+
+      <div class="form-footer">
+        <label class="remember">
+          <input type="checkbox" name="remember"/> Remember me
+        </label>
+        <a href="#" class="forgot">Forgot password?</a>
+      </div>
+
+      <button type="submit" class="btn-login" id="loginBtn">
+        <i class="fas fa-right-to-bracket"></i>
+        Sign In
+      </button>
+    </form>
+
+    <div class="divider">Default credentials</div>
+
+    <div class="login-footer">
+      Admin: <strong>admin</strong> / <strong>admin123</strong>&nbsp;&nbsp;·&nbsp;&nbsp;
+      Staff: <strong>staff</strong> / <strong>staff123</strong>
+    </div>
+  </div>
+</div>
+
+<script>
+  // Toggle password visibility
+  document.getElementById('togglePw').addEventListener('click', function() {
+    const pw = document.getElementById('password');
+    if (pw.type === 'password') {
+      pw.type = 'text';
+      this.className = 'fas fa-eye-slash toggle-pw';
+    } else {
+      pw.type = 'password';
+      this.className = 'fas fa-eye toggle-pw';
+    }
+  });
+
+  // Loading state on submit
+  document.getElementById('loginForm').addEventListener('submit', function() {
+    const btn = document.getElementById('loginBtn');
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Signing in...';
+    btn.disabled = true;
+  });
+</script>
+</body>
+</html>

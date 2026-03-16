@@ -1,0 +1,232 @@
+{% extends "base.html" %}
+{% set active_page = 'video' %}
+{% block title %}Video Analysis — RetailGuard AI{% endblock %}
+{% block page_title %}Video Analysis{% endblock %}
+
+{% block extra_head %}
+<style>
+  .drop-zone {
+    border:2px dashed var(--border); border-radius:var(--radius);
+    padding:48px 24px; text-align:center; cursor:pointer;
+    transition:all 0.3s; background:var(--bg-primary);
+  }
+  .drop-zone:hover, .drop-zone.drag-over {
+    border-color:var(--accent); background:#f0f9ff;
+  }
+  .drop-zone i { font-size:48px; color:var(--accent); margin-bottom:16px; display:block; }
+  .drop-zone h4 { font-size:16px; font-weight:600; margin-bottom:6px; }
+  .drop-zone p { font-size:13px; color:var(--muted); }
+  .progress-bar-wrap { background:var(--border); border-radius:20px; height:8px; overflow:hidden; margin:12px 0; }
+  .progress-bar { height:100%; background:var(--accent); border-radius:20px; transition:width 0.5s; width:0%; }
+  .video-result { background:var(--bg-primary); border-radius:var(--radius); overflow:hidden; }
+  .video-result video { width:100%; display:block; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h2>Video Analysis</h2>
+  <p>Upload a recorded video to run offline behavior detection</p>
+</div>
+
+<div class="grid-2">
+  <!-- Upload -->
+  <div>
+    <div class="card">
+      <div class="card-header">
+        <i class="fas fa-upload" style="color:var(--accent)"></i>
+        <h3>Upload Video</h3>
+      </div>
+      <div class="card-body">
+        <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()">
+          <i class="fas fa-file-video"></i>
+          <h4>Drag & Drop video here</h4>
+          <p>or click to browse</p>
+          <p style="margin-top:8px;font-size:12px;color:var(--muted)">Supports: MP4, AVI, MOV, MKV · Max 500MB</p>
+        </div>
+        <input type="file" id="fileInput" accept="video/*" style="display:none" />
+
+        <div id="file-info" style="display:none;margin-top:16px">
+          <div class="flex gap-8" style="margin-bottom:12px">
+            <i class="fas fa-file-video" style="color:var(--accent);font-size:18px"></i>
+            <div>
+              <div style="font-weight:600;font-size:14px" id="file-name">—</div>
+              <div style="font-size:12px;color:var(--muted)" id="file-size">—</div>
+            </div>
+          </div>
+          <button class="btn btn-primary" onclick="uploadVideo()" id="analyzeBtn" style="width:100%;justify-content:center">
+            <i class="fas fa-magnifying-glass"></i> Analyze Video
+          </button>
+        </div>
+
+        <!-- Progress -->
+        <div id="progress-section" style="display:none;margin-top:16px">
+          <div class="flex-between" style="margin-bottom:6px">
+            <span style="font-size:13px;font-weight:600">Processing...</span>
+            <span id="progress-pct" style="font-size:13px;color:var(--accent)">0%</span>
+          </div>
+          <div class="progress-bar-wrap">
+            <div class="progress-bar" id="progressBar"></div>
+          </div>
+          <p style="font-size:12px;color:var(--muted);margin-top:6px">
+            AI model is analyzing your video for suspicious behaviors
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Guide -->
+    <div class="card gap-top">
+      <div class="card-header">
+        <i class="fas fa-circle-info" style="color:var(--accent-teal)"></i>
+        <h3>How it works</h3>
+      </div>
+      <div class="card-body" style="display:flex;flex-direction:column;gap:14px">
+        {% for step, desc in [
+          ('1. Upload', 'Select or drag in your recorded surveillance video'),
+          ('2. Process', 'YOLOv8 model analyzes each frame for behaviors'),
+          ('3. Review', 'Watch output with bounding boxes and behavior labels'),
+          ('4. Download', 'Save the annotated video for reporting'),
+        ] %}
+        <div class="flex gap-12">
+          <div style="width:32px;height:32px;border-radius:8px;background:var(--bg-primary);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:var(--accent);flex-shrink:0">{{ loop.index }}</div>
+          <div>
+            <div style="font-size:13px;font-weight:600">{{ step }}</div>
+            <div style="font-size:12px;color:var(--muted)">{{ desc }}</div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Results -->
+  <div class="card">
+    <div class="card-header">
+      <i class="fas fa-circle-play" style="color:var(--accent-teal)"></i>
+      <h3>Analysis Result</h3>
+    </div>
+    <div class="card-body">
+      <div id="result-placeholder" style="text-align:center;padding:60px 20px;color:var(--muted)">
+        <i class="fas fa-film" style="font-size:48px;display:block;margin-bottom:16px;opacity:0.3"></i>
+        Processed video will appear here
+      </div>
+      <div id="result-video" style="display:none">
+        <div class="video-result">
+          <video id="outputVideo" controls style="width:100%"></video>
+        </div>
+        <div class="flex gap-8" style="margin-top:14px">
+          <a id="downloadBtn" class="btn btn-teal" style="flex:1;justify-content:center" download>
+            <i class="fas fa-download"></i> Download
+          </a>
+          <button class="btn btn-outline" onclick="resetUpload()">
+            <i class="fas fa-arrow-rotate-left"></i> New Upload
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+
+  let selectedFile = null;
+  let progressInterval = null;
+  let fakeProgress = 0;
+
+  // File input change listener
+  document.getElementById('fileInput').addEventListener('change', function() {
+    if (this.files[0]) handleFile(this.files[0]);
+  });
+
+  // Drag & drop
+  const dz = document.getElementById('dropZone');
+  dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag-over'); });
+  dz.addEventListener('dragleave', () => dz.classList.remove('drag-over'));
+  dz.addEventListener('drop', e => {
+    e.preventDefault(); dz.classList.remove('drag-over');
+    if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
+  });
+
+  function handleFile(file) {
+    if (!file) return;
+    selectedFile = file;
+    document.getElementById('file-name').textContent = file.name;
+    document.getElementById('file-size').textContent = (file.size / 1024 / 1024).toFixed(1) + ' MB';
+    document.getElementById('file-info').style.display = 'block';
+  }
+
+  function uploadVideo() {
+    if (!selectedFile) return;
+    const formData = new FormData();
+    formData.append('video', selectedFile);
+
+    document.getElementById('analyzeBtn').disabled = true;
+    document.getElementById('progress-section').style.display = 'block';
+    startFakeProgress();
+
+    fetch('/api/upload-video', { method: 'POST', body: formData })
+      .then(r => r.json())
+      .then(d => {
+        if (d.error) {
+          alert('Error: ' + d.error);
+          resetProgress();
+        }
+        // Wait for socket event 'video_ready'
+      })
+      .catch(e => { alert('Upload failed'); resetProgress(); });
+  }
+
+  function startFakeProgress() {
+    fakeProgress = 0;
+    progressInterval = setInterval(() => {
+      fakeProgress = Math.min(fakeProgress + Math.random() * 3, 85);
+      setProgress(fakeProgress);
+    }, 500);
+  }
+
+  function setProgress(pct) {
+    document.getElementById('progressBar').style.width = pct + '%';
+    document.getElementById('progress-pct').textContent = Math.floor(pct) + '%';
+  }
+
+  function resetProgress() {
+    clearInterval(progressInterval);
+    document.getElementById('progress-section').style.display = 'none';
+    document.getElementById('analyzeBtn').disabled = false;
+    setProgress(0);
+  }
+
+  socket.on('video_ready', function(data) {
+    clearInterval(progressInterval);
+    setProgress(100);
+    setTimeout(() => {
+      document.getElementById('progress-section').style.display = 'none';
+      const videoURL = '/static/processed/' + data.filename;
+      const vid = document.getElementById('outputVideo');
+      vid.src = videoURL;
+      document.getElementById('downloadBtn').href = videoURL;
+      document.getElementById('downloadBtn').download = data.filename;
+      document.getElementById('result-placeholder').style.display = 'none';
+      document.getElementById('result-video').style.display = 'block';
+    }, 800);
+  });
+
+  socket.on('video_error', function(data) {
+    resetProgress();
+    alert('Processing error: ' + data.error);
+  });
+
+  function resetUpload() {
+    selectedFile = null;
+    document.getElementById('file-info').style.display = 'none';
+    document.getElementById('result-video').style.display = 'none';
+    document.getElementById('result-placeholder').style.display = 'block';
+    document.getElementById('outputVideo').src = '';
+    document.getElementById('fileInput').value = '';
+    setProgress(0);
+  }
+</script>
+{% endblock %}

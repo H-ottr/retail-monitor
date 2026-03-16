@@ -1,0 +1,10 @@
+names:
+- Normal
+- Running
+- Loitering
+- SuspiciousShelfInteraction
+- CrowdFormation
+nc: 5
+path: C:\Users\abhim\Downloads\retail-monitor\retail-monitor\data\merged_dataset
+train: images/train
+val: images/val

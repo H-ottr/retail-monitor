@@ -1,0 +1,250 @@
+{% extends "base.html" %}
+{% set active_page = 'dashboard' %}
+{% block title %}Dashboard — RetailGuard AI{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
+
+{% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  .stat-icon-total    { background:#eff6ff; color:#2563eb; }
+  .stat-icon-suspicious { background:#fef2f2; color:#dc2626; }
+  .stat-icon-normal   { background:#f0fdf4; color:#16a34a; }
+  .stat-icon-status   { background:#f0fdfa; color:#0d9488; }
+  .recent-alert-row { display:flex; align-items:center; gap:12px; padding:10px 0; border-bottom:1px solid var(--border); }
+  .recent-alert-row:last-child { border-bottom:none; }
+  .alert-icon { width:36px; height:36px; border-radius:9px; display:flex; align-items:center; justify-content:center; font-size:14px; flex-shrink:0; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header flex-between">
+  <div>
+    <h2>Overview Dashboard</h2>
+    <p>Today's monitoring summary — <span id="today-date"></span></p>
+  </div>
+  <div class="flex gap-8">
+    <button class="btn btn-outline" onclick="refreshStats()">
+      <i class="fas fa-rotate-right"></i> Refresh
+    </button>
+    <a href="/live" class="btn btn-primary">
+      <i class="fas fa-video"></i> Go Live
+    </a>
+  </div>
+</div>
+
+<!-- ── Stat Cards ── -->
+<div class="grid-4">
+  <div class="stat-card">
+    <div class="flex-between" style="margin-bottom:12px">
+      <div class="label">Total Detections</div>
+      <div class="icon-box stat-icon-total"><i class="fas fa-eye"></i></div>
+    </div>
+    <div class="value" id="stat-total">{{ total }}</div>
+    <div style="font-size:12px;color:var(--muted);margin-top:6px">Today so far</div>
+  </div>
+
+  <div class="stat-card">
+    <div class="flex-between" style="margin-bottom:12px">
+      <div class="label">Suspicious Events</div>
+      <div class="icon-box stat-icon-suspicious"><i class="fas fa-triangle-exclamation"></i></div>
+    </div>
+    <div class="value" id="stat-suspicious" style="color:var(--danger)">{{ suspicious }}</div>
+    <div style="font-size:12px;color:var(--muted);margin-top:6px">Require attention</div>
+  </div>
+
+  <div class="stat-card">
+    <div class="flex-between" style="margin-bottom:12px">
+      <div class="label">Normal Activities</div>
+      <div class="icon-box stat-icon-normal"><i class="fas fa-circle-check"></i></div>
+    </div>
+    <div class="value" id="stat-normal" style="color:var(--success)">{{ normal }}</div>
+    <div style="font-size:12px;color:var(--muted);margin-top:6px">Standard behavior</div>
+  </div>
+
+  <div class="stat-card">
+    <div class="flex-between" style="margin-bottom:12px">
+      <div class="label">System Status</div>
+      <div class="icon-box stat-icon-status"><i class="fas fa-server"></i></div>
+    </div>
+    <div style="font-size:18px;font-weight:700;color:var(--accent-teal)" id="stat-cam-status">
+      {{ 'LIVE' if camera_active else 'STANDBY' }}
+    </div>
+    <div style="font-size:12px;color:var(--muted);margin-top:6px">
+      {{ 'Camera active' if camera_active else 'Camera inactive' }}
+    </div>
+  </div>
+</div>
+
+<!-- ── Charts Row ── -->
+<div class="grid-2 gap-top">
+  <div class="card">
+    <div class="card-header">
+      <i class="fas fa-chart-bar" style="color:var(--accent)"></i>
+      <h3>Hourly Detections (Last 12 Hours)</h3>
+    </div>
+    <div class="card-body">
+      <canvas id="hourlyChart" height="220"></canvas>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <i class="fas fa-chart-pie" style="color:var(--accent-teal)"></i>
+      <h3>Behavior Distribution</h3>
+    </div>
+    <div class="card-body">
+      <canvas id="pieChart" height="220"></canvas>
+    </div>
+  </div>
+</div>
+
+<!-- ── Recent Alerts + Quick Nav ── -->
+<div class="grid-2 gap-top">
+  <div class="card">
+    <div class="card-header flex-between">
+      <div class="flex gap-8">
+        <i class="fas fa-bell" style="color:var(--danger)"></i>
+        <h3>Recent Alerts</h3>
+      </div>
+      <a href="/alerts" class="btn btn-outline" style="padding:5px 10px;font-size:12px">View All</a>
+    </div>
+    <div class="card-body" id="recent-alerts-list">
+      <div style="color:var(--muted);font-size:14px;text-align:center;padding:20px">
+        <i class="fas fa-spinner fa-spin"></i> Loading...
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <i class="fas fa-bolt" style="color:var(--warning)"></i>
+      <h3>Quick Actions</h3>
+    </div>
+    <div class="card-body" style="display:flex;flex-direction:column;gap:12px">
+      <a href="/live" class="btn btn-primary" style="justify-content:center">
+        <i class="fas fa-video"></i> Open Live Monitor
+      </a>
+      <a href="/video-analysis" class="btn btn-teal" style="justify-content:center">
+        <i class="fas fa-film"></i> Analyze a Video
+      </a>
+      <a href="/alerts" class="btn btn-warning" style="justify-content:center">
+        <i class="fas fa-triangle-exclamation"></i> Review Incidents
+      </a>
+      <a href="/analytics" class="btn btn-outline" style="justify-content:center">
+        <i class="fas fa-chart-line"></i> View Analytics
+      </a>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  document.getElementById('today-date').textContent =
+    new Date().toLocaleDateString('en-US', {weekday:'long', year:'numeric', month:'long', day:'numeric'});
+
+  let hourlyChart, pieChart;
+  const COLORS = {
+    'Normal': '#22c55e',
+    'Running': '#ef4444',
+    'Loitering': '#f97316',
+    'Suspicious Shelf Interaction': '#eab308',
+    'Crowd Formation': '#a855f7',
+  };
+
+  function initCharts(hourly, behaviors) {
+    const ctx1 = document.getElementById('hourlyChart').getContext('2d');
+    if (hourlyChart) hourlyChart.destroy();
+    hourlyChart = new Chart(ctx1, {
+      type: 'bar',
+      data: {
+        labels: hourly.map(h => h.hour),
+        datasets: [{
+          label: 'Detections',
+          data: hourly.map(h => h.count),
+          backgroundColor: 'rgba(14,165,233,0.7)',
+          borderColor: '#0ea5e9',
+          borderWidth: 1,
+          borderRadius: 4,
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          y: { beginAtZero: true, grid: { color: '#f1f5f9' },
+               ticks: { color: '#64748b', font: { size: 12 } } },
+          x: { grid: { display: false },
+               ticks: { color: '#64748b', font: { size: 11 } } }
+        }
+      }
+    });
+
+    const behLabels = Object.keys(behaviors);
+    const behData   = Object.values(behaviors);
+    const behColors = behLabels.map(l => COLORS[l] || '#94a3b8');
+    const ctx2 = document.getElementById('pieChart').getContext('2d');
+    if (pieChart) pieChart.destroy();
+    pieChart = new Chart(ctx2, {
+      type: 'doughnut',
+      data: {
+        labels: behLabels,
+        datasets: [{ data: behData, backgroundColor: behColors, borderWidth: 2, borderColor: '#fff' }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        cutout: '60%',
+        plugins: {
+          legend: {
+            position: 'right',
+            labels: { font: { size: 12 }, color: '#374151', boxWidth: 14, padding: 14 }
+          }
+        }
+      }
+    });
+  }
+
+  function renderRecentAlerts(alerts) {
+    const container = document.getElementById('recent-alerts-list');
+    if (!alerts.length) {
+      container.innerHTML = '<div style="color:var(--muted);font-size:14px;text-align:center;padding:20px"><i class="fas fa-check-circle" style="color:var(--success);font-size:24px;display:block;margin-bottom:8px"></i>No recent alerts</div>';
+      return;
+    }
+    const colorMap = {
+      'Running':'#ef4444','Loitering':'#f97316',
+      'Suspicious Shelf Interaction':'#eab308','Crowd Formation':'#a855f7'
+    };
+    container.innerHTML = alerts.map(a => `
+      <div class="recent-alert-row">
+        <div class="alert-icon" style="background:${colorMap[a.behavior]||'#6b7280'}22;color:${colorMap[a.behavior]||'#6b7280'}">
+          <i class="fas fa-triangle-exclamation"></i>
+        </div>
+        <div style="flex:1">
+          <div style="font-size:13.5px;font-weight:600">${a.behavior}</div>
+          <div style="font-size:12px;color:var(--muted)">${a.timestamp}</div>
+        </div>
+        <div style="font-size:12px;font-weight:600;color:var(--accent)">${(a.confidence*100).toFixed(0)}%</div>
+      </div>`).join('');
+  }
+
+  function refreshStats() {
+    fetch('/api/dashboard/stats')
+      .then(r => r.json())
+      .then(d => {
+        initCharts(d.hourly, d.behaviors);
+        updateCamStatus(d.camera_active);
+        document.getElementById('stat-cam-status').textContent = d.camera_active ? 'LIVE' : 'STANDBY';
+      });
+    fetch('/api/alerts/recent')
+      .then(r => r.json())
+      .then(renderRecentAlerts);
+  }
+
+  refreshStats();
+  setInterval(refreshStats, 15000);
+
+  function onAlertReceived(data) {
+    refreshStats();
+  }
+</script>
+{% endblock %}

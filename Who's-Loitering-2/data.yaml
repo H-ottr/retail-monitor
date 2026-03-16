@@ -1,0 +1,15 @@
+names:
+- Car
+- Walking
+- human
+- loitering
+nc: 4
+roboflow:
+  license: CC BY 4.0
+  project: who-s-loitering
+  url: https://universe.roboflow.com/seeing-algotrial-2/who-s-loitering/dataset/2
+  version: 2
+  workspace: seeing-algotrial-2
+test: ../test/images
+train: ../train/images
+val: ../valid/images

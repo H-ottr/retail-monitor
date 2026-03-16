@@ -1,0 +1,208 @@
+{% extends "base.html" %}
+{% set active_page = 'alerts' %}
+{% block title %}Alerts & Incidents — RetailGuard AI{% endblock %}
+{% block page_title %}Alerts & Incidents{% endblock %}
+
+{% block extra_head %}
+<style>
+  .filter-bar { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:20px; }
+  .filter-bar input, .filter-bar select {
+    padding:8px 14px; border:1.5px solid var(--border);
+    border-radius:8px; font-size:13px; outline:none;
+    font-family:'Inter',sans-serif; background:var(--white);
+    transition:border-color 0.2s;
+  }
+  .filter-bar input:focus, .filter-bar select:focus { border-color:var(--accent); }
+  .filter-bar input { flex:1; min-width:180px; }
+  .table-wrap { overflow-x:auto; }
+  .empty-state { text-align:center; padding:60px 20px; color:var(--muted); }
+  .empty-state i { font-size:48px; display:block; margin-bottom:16px; opacity:0.3; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header flex-between">
+  <div>
+    <h2>Alerts & Incidents</h2>
+    <p>All detected anomalies and incidents recorded by the system</p>
+  </div>
+  <div class="flex gap-8">
+    <button class="btn btn-outline" onclick="exportCSV()">
+      <i class="fas fa-file-csv"></i> Export CSV
+    </button>
+  </div>
+</div>
+
+<!-- Summary Cards -->
+<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:20px">
+  {% set behaviors = [
+    ('All', 'fa-list', '#0ea5e9', incidents|length),
+    ('Running', 'fa-person-running', '#ef4444', incidents|selectattr('behavior','equalto','Running')|list|length),
+    ('Loitering', 'fa-clock', '#f97316', incidents|selectattr('behavior','equalto','Loitering')|list|length),
+    ('Suspicious Shelf', 'fa-boxes-stacked', '#eab308', incidents|selectattr('behavior','equalto','Suspicious Shelf Interaction')|list|length),
+    ('Crowd', 'fa-people-group', '#a855f7', incidents|selectattr('behavior','equalto','Crowd Formation')|list|length),
+  ] %}
+  {% for label, icon, color, count in behaviors %}
+  <div class="stat-card" style="cursor:pointer" onclick="filterByBehavior('{{ label }}')">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+      <div style="width:32px;height:32px;border-radius:8px;background:{{ color }}22;display:flex;align-items:center;justify-content:center;color:{{ color }};font-size:14px">
+        <i class="fas {{ icon }}"></i>
+      </div>
+      <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase">{{ label }}</div>
+    </div>
+    <div style="font-size:24px;font-weight:700;color:var(--text)">{{ count }}</div>
+  </div>
+  {% endfor %}
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <i class="fas fa-triangle-exclamation" style="color:var(--danger)"></i>
+    <h3>Incident Log</h3>
+    <span style="margin-left:auto;font-size:12px;color:var(--muted)">{{ incidents|length }} records</span>
+  </div>
+  <div class="card-body">
+    <div class="filter-bar">
+      <input type="text" id="searchInput" placeholder="🔍 Search behavior, camera..." oninput="applyFilters()"/>
+      <select id="behaviorFilter" onchange="applyFilters()">
+        <option value="">All Behaviors</option>
+        <option value="Normal">Normal</option>
+        <option value="Running">Running</option>
+        <option value="Loitering">Loitering</option>
+        <option value="Suspicious Shelf Interaction">Suspicious Shelf Interaction</option>
+        <option value="Crowd Formation">Crowd Formation</option>
+      </select>
+      <input type="date" id="dateFilter" onchange="applyFilters()"/>
+      <button class="btn btn-outline" onclick="clearFilters()"><i class="fas fa-xmark"></i> Clear</button>
+    </div>
+
+    {% if incidents %}
+    <div class="table-wrap">
+      <table class="data-table" id="incidentsTable">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Timestamp</th>
+            <th>Behavior</th>
+            <th>Confidence</th>
+            <th>Camera</th>
+            <th>Type</th>
+            <th>Frame</th>
+          </tr>
+        </thead>
+        <tbody id="tableBody">
+          {% for inc in incidents %}
+          <tr data-behavior="{{ inc.behavior }}" data-date="{{ inc.timestamp.strftime('%Y-%m-%d') }}"
+              data-search="{{ inc.behavior|lower }} {{ inc.camera_source|lower }}">
+            <td style="color:var(--muted);font-size:12px">{{ inc.id }}</td>
+            <td style="font-size:13px;white-space:nowrap">{{ inc.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+            <td>
+              {% set bclass = {
+                'Normal':'badge-normal', 'Running':'badge-running',
+                'Loitering':'badge-loitering',
+                'Suspicious Shelf Interaction':'badge-suspicious',
+                'Crowd Formation':'badge-crowd'
+              } %}
+              <span class="badge {{ bclass.get(inc.behavior, 'badge-normal') }}">{{ inc.behavior }}</span>
+            </td>
+            <td>
+              <div style="display:flex;align-items:center;gap:8px">
+                <div style="flex:1;background:var(--bg-primary);border-radius:4px;height:6px;width:60px">
+                  <div style="height:100%;border-radius:4px;background:{% if inc.confidence > 0.75 %}var(--danger){% elif inc.confidence > 0.5 %}var(--warning){% else %}var(--success){% endif %};width:{{ (inc.confidence*100)|int }}%"></div>
+                </div>
+                <span style="font-size:12px;font-weight:600">{{ (inc.confidence*100)|int }}%</span>
+              </div>
+            </td>
+            <td style="font-size:13px">{{ inc.camera_source }}</td>
+            <td>
+              {% if inc.is_anomaly %}
+                <span style="font-size:12px;color:var(--danger);font-weight:600">⚠ Anomaly</span>
+              {% else %}
+                <span style="font-size:12px;color:var(--success);font-weight:600">✓ Normal</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if inc.frame_path %}
+                <a href="/static/{{ inc.frame_path }}" target="_blank" class="btn btn-outline" style="padding:4px 8px;font-size:11px">
+                  <i class="fas fa-image"></i> View
+                </a>
+              {% else %}
+                <span style="color:var(--muted);font-size:12px">—</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+      <i class="fas fa-shield-check"></i>
+      No incidents recorded yet. Start the camera to begin monitoring.
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  function applyFilters() {
+    const search = document.getElementById('searchInput').value.toLowerCase();
+    const behavior = document.getElementById('behaviorFilter').value;
+    const date = document.getElementById('dateFilter').value;
+    const rows = document.querySelectorAll('#tableBody tr');
+    rows.forEach(row => {
+      const matchSearch = !search || row.dataset.search.includes(search);
+      const matchBeh = !behavior || row.dataset.behavior === behavior;
+      const matchDate = !date || row.dataset.date === date;
+      row.style.display = (matchSearch && matchBeh && matchDate) ? '' : 'none';
+    });
+  }
+
+  function clearFilters() {
+    document.getElementById('searchInput').value = '';
+    document.getElementById('behaviorFilter').value = '';
+    document.getElementById('dateFilter').value = '';
+    applyFilters();
+  }
+
+  function filterByBehavior(beh) {
+    if (beh === 'All') {
+      clearFilters(); return;
+    }
+    const fullNames = {
+      'Suspicious Shelf': 'Suspicious Shelf Interaction',
+      'Crowd': 'Crowd Formation',
+    };
+    document.getElementById('behaviorFilter').value = fullNames[beh] || beh;
+    applyFilters();
+  }
+
+  function exportCSV() {
+    const rows = [['ID','Timestamp','Behavior','Confidence','Camera','Type']];
+    document.querySelectorAll('#tableBody tr').forEach(row => {
+      const cells = row.querySelectorAll('td');
+      if (row.style.display !== 'none' && cells.length >= 6) {
+        rows.push([
+          cells[0].textContent.trim(),
+          cells[1].textContent.trim(),
+          cells[2].textContent.trim(),
+          cells[3].textContent.trim(),
+          cells[4].textContent.trim(),
+          cells[5].textContent.trim(),
+        ]);
+      }
+    });
+    const csv = rows.map(r => r.map(c => `"${c}"`).join(',')).join('\n');
+    const link = document.createElement('a');
+    link.href = 'data:text/csv,' + encodeURIComponent(csv);
+    link.download = 'incidents_' + new Date().toISOString().slice(0,10) + '.csv';
+    link.click();
+  }
+
+  function onAlertReceived(data) {
+    // Flash notification dot (already handled in base)
+  }
+</script>
+{% endblock %}

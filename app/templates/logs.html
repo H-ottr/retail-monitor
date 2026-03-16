@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% set active_page = 'logs' %}
+{% block title %}Activity Logs — RetailGuard AI{% endblock %}
+{% block page_title %}Activity Logs{% endblock %}
+
+{% block content %}
+<div class="page-header flex-between">
+  <div>
+    <h2>Activity Logs</h2>
+    <p>Chronological record of all system operations</p>
+  </div>
+  <button class="btn btn-outline" onclick="exportLogs()">
+    <i class="fas fa-file-export"></i> Export
+  </button>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <i class="fas fa-scroll" style="color:var(--accent)"></i>
+    <h3>System Log</h3>
+    <span style="margin-left:auto;font-size:12px;color:var(--muted)">{{ logs|length }} entries</span>
+  </div>
+  <div class="card-body" style="padding:0">
+    {% if logs %}
+    <div style="overflow-x:auto">
+      <table class="data-table" id="logsTable">
+        <thead>
+          <tr>
+            <th>Timestamp</th>
+            <th>Category</th>
+            <th>Action</th>
+            <th>User</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for log in logs %}
+          {% set cat_colors = {'Auth':'#0ea5e9','Camera':'#14b8a6','Video':'#a855f7','Settings':'#f97316','System':'#64748b'} %}
+          <tr>
+            <td style="font-size:12px;color:var(--muted);white-space:nowrap">{{ log.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+            <td>
+              <span class="badge" style="background:{{ cat_colors.get(log.category,'#94a3b8') }}22;color:{{ cat_colors.get(log.category,'#94a3b8') }}">
+                {{ log.category or '—' }}
+              </span>
+            </td>
+            <td style="font-size:13.5px">{{ log.action }}</td>
+            <td style="font-size:13px;color:var(--muted)">{{ log.user or 'System' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div style="text-align:center;padding:60px;color:var(--muted)">
+      <i class="fas fa-scroll" style="font-size:48px;display:block;margin-bottom:16px;opacity:0.3"></i>
+      No activity logs yet
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  function exportLogs() {
+    const rows = [['Timestamp','Category','Action','User']];
+    document.querySelectorAll('#logsTable tbody tr').forEach(row => {
+      const cells = row.querySelectorAll('td');
+      rows.push([cells[0].textContent.trim(), cells[1].textContent.trim(),
+                 cells[2].textContent.trim(), cells[3].textContent.trim()]);
+    });
+    const csv = rows.map(r => r.map(c => `"${c}"`).join(',')).join('\n');
+    const link = document.createElement('a');
+    link.href = 'data:text/csv,' + encodeURIComponent(csv);
+    link.download = 'activity_logs_' + new Date().toISOString().slice(0,10) + '.csv';
+    link.click();
+  }
+</script>
+{% endblock %}

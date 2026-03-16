@@ -1,0 +1,14 @@
+names:
+- Normal
+- pickup
+- shoplifting
+nc: 3
+roboflow:
+  license: CC BY 4.0
+  project: shoplifting-uofcd
+  url: https://universe.roboflow.com/cpm/shoplifting-uofcd/dataset/9
+  version: 9
+  workspace: cpm
+test: ../test/images
+train: ../train/images
+val: ../valid/images

@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+venv/
+.env/
+.env.*
+
+# VS Code
+.vscode/
+
+# PyTorch/YOLO weights
+*.pt
+
+# Logs
+logs/
+
+# Dataset outputs
+runs/
+
+# Misc
+.DS_Store
+*.log

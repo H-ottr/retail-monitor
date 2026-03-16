@@ -1,0 +1,62 @@
+# ============================================================
+# Retail Shop Behavior Detection - YOLOv8 Dataset Config
+# ============================================================
+# Dataset Sources (download before training):
+#   1. DCSASS:   https://www.kaggle.com/datasets/mateohervas/dcsass-dataset
+#   2. UCF-Crime: https://www.kaggle.com/datasets/odins0n/ucf-crime-dataset
+#   3. PoseLift:  https://github.com/TeCSAR-UNCC/PoseLift
+#   4. Roboflow:  https://universe.roboflow.com (search: shoplifting, loitering)
+# ============================================================
+
+path: ../data               # Root dataset directory
+train: images/train         # Train images (relative to path)
+val: images/val             # Validation images
+test: images/test           # Test images (optional)
+
+# Number of classes
+nc: 5
+
+# Class names — must match labels in annotation files
+names:
+  0: Normal
+  1: Running
+  2: Loitering
+  3: SuspiciousShelfInteraction
+  4: CrowdFormation
+
+# ============================================================
+# Behavior Descriptions (for reference during annotation)
+# ============================================================
+# 0 - Normal:
+#     Standard customer activities: walking, browsing,
+#     briefly examining products.
+#
+# 1 - Running:
+#     Unusually fast movement inside the store. May indicate
+#     panic or escape attempt after theft.
+#
+# 2 - Loitering:
+#     Person stays in one area for a long time without normal
+#     shopping behavior.
+#
+# 3 - SuspiciousShelfInteraction:
+#     Unusual interaction with shelves: repeatedly handling
+#     items, hiding products, behaving abnormally.
+#
+# 4 - CrowdFormation:
+#     Multiple people unexpectedly gathering in a small area.
+#     May indicate disturbances or coordinated theft.
+# ============================================================
+
+# ============================================================
+# Recommended Dataset Split
+# ============================================================
+# Total images per class (recommended minimum):
+#   Normal:                       500+ images
+#   Running:                      300+ images
+#   Loitering:                    300+ images
+#   SuspiciousShelfInteraction:   300+ images
+#   CrowdFormation:               200+ images
+#
+# Split ratio: 80% train / 10% val / 10% test
+# ============================================================

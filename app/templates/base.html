@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>{% block title %}RetailGuard AI{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"/>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
+  <style>
+    :root {
+      --bg-primary:   #f0f4f8;
+      --bg-secondary: #ffffff;
+      --bg-sidebar:   #0f172a;
+      --bg-header:    #ffffff;
+      --accent:       #0ea5e9;
+      --accent-dark:  #0284c7;
+      --accent-teal:  #14b8a6;
+      --success:      #22c55e;
+      --warning:      #f97316;
+      --danger:       #ef4444;
+      --danger-dark:  #dc2626;
+      --text-primary: #0f172a;
+      --text-secondary:#64748b;
+      --text-muted:   #94a3b8;
+      --border:       #e2e8f0;
+      --shadow-sm:    0 1px 3px rgba(0,0,0,0.08);
+      --shadow-md:    0 4px 16px rgba(0,0,0,0.10);
+      --shadow-lg:    0 8px 32px rgba(0,0,0,0.12);
+      --radius:       12px;
+      --sidebar-w:    240px;
+      --header-h:     64px;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; font-family: 'Inter', sans-serif; background: var(--bg-primary); color: var(--text-primary); }
+
+    /* ── Sidebar ── */
+    .sidebar {
+      position: fixed; top: 0; left: 0;
+      width: var(--sidebar-w); height: 100vh;
+      background: var(--bg-sidebar);
+      display: flex; flex-direction: column;
+      z-index: 100; transition: transform 0.3s ease;
+    }
+    .sidebar-logo {
+      padding: 20px 20px 16px;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+    }
+    .sidebar-logo .logo-icon {
+      width: 40px; height: 40px; background: var(--accent);
+      border-radius: 10px; display: flex; align-items: center;
+      justify-content: center; margin-bottom: 10px;
+    }
+    .sidebar-logo .logo-icon i { color: #fff; font-size: 18px; }
+    .sidebar-logo h1 {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 16px; font-weight: 700; color: #fff; letter-spacing: -0.3px;
+    }
+    .sidebar-logo span { font-size: 11px; color: var(--text-muted); }
+
+    .sidebar-nav { flex: 1; padding: 12px 0; overflow-y: auto; }
+    .nav-section-label {
+      font-size: 10px; font-weight: 600; color: #475569;
+      text-transform: uppercase; letter-spacing: 1px;
+      padding: 12px 20px 6px;
+    }
+    .nav-item {
+      display: flex; align-items: center; gap: 12px;
+      padding: 10px 20px; color: #94a3b8;
+      text-decoration: none; font-size: 13.5px; font-weight: 500;
+      border-radius: 0; transition: all 0.2s;
+      position: relative; margin: 1px 8px; border-radius: 8px;
+    }
+    .nav-item i { width: 18px; text-align: center; font-size: 14px; }
+    .nav-item:hover { background: rgba(255,255,255,0.06); color: #e2e8f0; }
+    .nav-item.active {
+      background: rgba(14,165,233,0.15); color: var(--accent);
+    }
+    .nav-item.active::before {
+      content: ''; position: absolute; left: -8px; top: 50%;
+      transform: translateY(-50%);
+      width: 3px; height: 20px; background: var(--accent);
+      border-radius: 0 3px 3px 0;
+    }
+    .nav-badge {
+      margin-left: auto; background: var(--danger);
+      color: #fff; font-size: 10px; font-weight: 700;
+      padding: 2px 6px; border-radius: 10px; min-width: 18px;
+      text-align: center;
+    }
+
+    .sidebar-footer {
+      padding: 16px; border-top: 1px solid rgba(255,255,255,0.08);
+    }
+    .sidebar-user {
+      display: flex; align-items: center; gap: 10px;
+    }
+    .sidebar-user .avatar {
+      width: 34px; height: 34px; border-radius: 50%;
+      background: var(--accent); display: flex;
+      align-items: center; justify-content: center;
+      color: #fff; font-size: 13px; font-weight: 700;
+    }
+    .sidebar-user .info { flex: 1; overflow: hidden; }
+    .sidebar-user .info .name {
+      font-size: 13px; font-weight: 600; color: #e2e8f0;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .sidebar-user .info .role { font-size: 11px; color: #64748b; }
+    .sidebar-user a { color: #64748b; font-size: 14px; transition: color 0.2s; }
+    .sidebar-user a:hover { color: var(--danger); }
+
+    /* ── Header ── */
+    .header {
+      position: fixed; top: 0;
+      left: var(--sidebar-w); right: 0;
+      height: var(--header-h);
+      background: var(--bg-header);
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center;
+      padding: 0 24px; gap: 16px;
+      z-index: 90; box-shadow: var(--shadow-sm);
+    }
+    .header-title {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 17px; font-weight: 600; color: var(--text-primary);
+      flex: 1;
+    }
+    .header-clock {
+      font-size: 13px; color: var(--text-secondary);
+      background: var(--bg-primary); padding: 6px 12px;
+      border-radius: 20px; border: 1px solid var(--border);
+      display: flex; align-items: center; gap: 6px;
+    }
+    .header-clock i { color: var(--accent); font-size: 12px; }
+    .header-status {
+      display: flex; align-items: center; gap: 6px;
+      font-size: 13px; padding: 6px 12px;
+      border-radius: 20px;
+    }
+    .header-status.online {
+      background: #dcfce7; color: #166534;
+    }
+    .header-status.offline {
+      background: #fee2e2; color: #991b1b;
+    }
+    .status-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+    }
+    .header-status.online .status-dot { background: var(--success); animation: pulse 2s infinite; }
+    .header-status.offline .status-dot { background: var(--danger); }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    .notif-btn {
+      position: relative; width: 38px; height: 38px;
+      border: 1px solid var(--border); border-radius: 10px;
+      background: var(--bg-secondary); display: flex;
+      align-items: center; justify-content: center;
+      cursor: pointer; color: var(--text-secondary);
+      transition: all 0.2s; text-decoration: none;
+    }
+    .notif-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .notif-dot {
+      position: absolute; top: 6px; right: 6px;
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--danger); border: 2px solid #fff;
+    }
+
+    /* ── Main Content ── */
+    .main {
+      margin-left: var(--sidebar-w);
+      margin-top: var(--header-h);
+      padding: 28px 28px;
+      min-height: calc(100vh - var(--header-h));
+    }
+
+    /* ── Cards ── */
+    .card {
+      background: var(--bg-secondary);
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow-sm);
+    }
+    .card-header {
+      padding: 18px 20px 14px;
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 10px;
+    }
+    .card-header h3 {
+      font-size: 15px; font-weight: 600; color: var(--text-primary);
+      flex: 1;
+    }
+    .card-body { padding: 20px; }
+
+    /* ── Stat Cards ── */
+    .stat-card {
+      background: var(--bg-secondary);
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      padding: 20px;
+      box-shadow: var(--shadow-sm);
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .stat-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
+    .stat-card .label {
+      font-size: 12px; font-weight: 600; color: var(--text-secondary);
+      text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;
+    }
+    .stat-card .value {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 32px; font-weight: 700; color: var(--text-primary);
+    }
+    .stat-card .icon-box {
+      width: 44px; height: 44px; border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px;
+    }
+
+    /* ── Alert Banner ── */
+    .alert-banner {
+      background: #fef2f2; border: 1px solid #fecaca;
+      border-left: 4px solid var(--danger);
+      border-radius: var(--radius); padding: 14px 18px;
+      display: flex; align-items: center; gap: 12px;
+      animation: slideIn 0.4s ease;
+    }
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateY(-10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .alert-banner i { color: var(--danger); font-size: 18px; }
+    .alert-banner .alert-text { flex: 1; font-size: 14px; color: #991b1b; }
+    .alert-banner .alert-close { cursor: pointer; color: #991b1b; opacity: 0.6; }
+    .alert-banner .alert-close:hover { opacity: 1; }
+
+    /* ── Buttons ── */
+    .btn {
+      display: inline-flex; align-items: center; gap: 7px;
+      padding: 9px 16px; border-radius: 8px; font-size: 13.5px;
+      font-weight: 500; cursor: pointer; border: none;
+      transition: all 0.2s; text-decoration: none;
+    }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-primary:hover { background: var(--accent-dark); }
+    .btn-teal { background: var(--accent-teal); color: #fff; }
+    .btn-teal:hover { background: #0d9488; }
+    .btn-danger { background: var(--danger); color: #fff; }
+    .btn-danger:hover { background: var(--danger-dark); }
+    .btn-outline {
+      background: transparent; color: var(--text-secondary);
+      border: 1px solid var(--border);
+    }
+    .btn-outline:hover { border-color: var(--accent); color: var(--accent); background: #f0f9ff; }
+    .btn-warning { background: var(--warning); color: #fff; }
+    .btn-warning:hover { background: #ea6c00; }
+    .btn-success { background: var(--success); color: #fff; }
+    .btn-success:hover { background: #16a34a; }
+
+    /* ── Table ── */
+    .data-table { width: 100%; border-collapse: collapse; }
+    .data-table th {
+      font-size: 11px; font-weight: 600; color: var(--text-secondary);
+      text-transform: uppercase; letter-spacing: 0.5px;
+      padding: 10px 14px; text-align: left;
+      background: var(--bg-primary); border-bottom: 1px solid var(--border);
+    }
+    .data-table td {
+      padding: 12px 14px; font-size: 13.5px;
+      border-bottom: 1px solid var(--border); color: var(--text-primary);
+    }
+    .data-table tr:hover td { background: #f8fafc; }
+    .data-table tr:last-child td { border-bottom: none; }
+
+    /* ── Behavior Badges ── */
+    .badge {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 3px 10px; border-radius: 20px;
+      font-size: 12px; font-weight: 600;
+    }
+    .badge-normal    { background: #dcfce7; color: #166534; }
+    .badge-running   { background: #fee2e2; color: #991b1b; }
+    .badge-loitering { background: #ffedd5; color: #9a3412; }
+    .badge-suspicious { background: #fef9c3; color: #713f12; }
+    .badge-crowd     { background: #f3e8ff; color: #6b21a8; }
+
+    /* ── Grid helpers ── */
+    .grid-4 { display: grid; grid-template-columns: repeat(4,1fr); gap: 16px; }
+    .grid-2 { display: grid; grid-template-columns: repeat(2,1fr); gap: 20px; }
+    .grid-3 { display: grid; grid-template-columns: repeat(3,1fr); gap: 20px; }
+    @media(max-width:1200px) { .grid-4 { grid-template-columns: repeat(2,1fr); } }
+    @media(max-width:900px)  { .grid-2, .grid-3 { grid-template-columns: 1fr; } }
+
+    .page-header { margin-bottom: 24px; }
+    .page-header h2 {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 22px; font-weight: 700; color: var(--text-primary);
+    }
+    .page-header p { font-size: 14px; color: var(--text-secondary); margin-top: 4px; }
+
+    .gap-top { margin-top: 20px; }
+    .flex { display: flex; align-items: center; }
+    .flex-between { display: flex; align-items: center; justify-content: space-between; }
+    .gap-8 { gap: 8px; }
+    .gap-12 { gap: 12px; }
+  </style>
+  {% block extra_head %}{% endblock %}
+</head>
+<body>
+
+<!-- ══════════ SIDEBAR ══════════ -->
+<aside class="sidebar">
+  <div class="sidebar-logo">
+    <div class="logo-icon"><i class="fas fa-shield-halved"></i></div>
+    <h1>RetailGuard AI</h1>
+    <span>Monitoring System</span>
+  </div>
+
+  <nav class="sidebar-nav">
+    <div class="nav-section-label">Main</div>
+    <a href="/dashboard" class="nav-item {% if active_page=='dashboard' %}active{% endif %}">
+      <i class="fas fa-gauge-high"></i> Dashboard
+    </a>
+    <a href="/live" class="nav-item {% if active_page=='live' %}active{% endif %}">
+      <i class="fas fa-video"></i> Live Monitoring
+      <span class="nav-badge" id="live-badge" style="display:none">●</span>
+    </a>
+    <a href="/video-analysis" class="nav-item {% if active_page=='video' %}active{% endif %}">
+      <i class="fas fa-film"></i> Video Analysis
+    </a>
+
+    <div class="nav-section-label">Security</div>
+    <a href="/alerts" class="nav-item {% if active_page=='alerts' %}active{% endif %}">
+      <i class="fas fa-triangle-exclamation"></i> Alerts & Incidents
+    </a>
+    <a href="/analytics" class="nav-item {% if active_page=='analytics' %}active{% endif %}">
+      <i class="fas fa-chart-line"></i> Analytics
+    </a>
+    <a href="/logs" class="nav-item {% if active_page=='logs' %}active{% endif %}">
+      <i class="fas fa-scroll"></i> Activity Logs
+    </a>
+
+    <div class="nav-section-label">System</div>
+    <a href="/settings" class="nav-item {% if active_page=='settings' %}active{% endif %}">
+      <i class="fas fa-sliders"></i> Settings
+    </a>
+  </nav>
+
+  <div class="sidebar-footer">
+    <div class="sidebar-user">
+      <div class="avatar">{{ username[0]|upper if username else 'U' }}</div>
+      <div class="info">
+        <div class="name">{{ username or 'User' }}</div>
+        <div class="role">{{ session.get('role','Staff')|title }}</div>
+      </div>
+      <a href="/logout" title="Logout"><i class="fas fa-right-from-bracket"></i></a>
+    </div>
+  </div>
+</aside>
+
+<!-- ══════════ HEADER ══════════ -->
+<header class="header">
+  <div class="header-title">{% block page_title %}Dashboard{% endblock %}</div>
+  <div class="header-clock">
+    <i class="fas fa-clock"></i>
+    <span id="live-clock">--:--:--</span>
+  </div>
+  <div class="header-status offline" id="cam-status-pill">
+    <span class="status-dot"></span>
+    <span id="cam-status-text">Camera Offline</span>
+  </div>
+  <a href="/alerts" class="notif-btn" title="Alerts">
+    <i class="fas fa-bell"></i>
+    <span class="notif-dot" id="notif-dot" style="display:none"></span>
+  </a>
+</header>
+
+<!-- ══════════ CONTENT ══════════ -->
+<main class="main">
+  {% block content %}{% endblock %}
+</main>
+
+<!-- ══════════ ALERT SOUND ══════════ -->
+<audio id="alert-sound" preload="auto">
+  <source src="data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAA..." type="audio/wav"/>
+</audio>
+
+<script>
+  // Live clock
+  function updateClock() {
+    const now = new Date();
+    document.getElementById('live-clock').textContent =
+      now.toLocaleTimeString('en-US', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+  }
+  updateClock();
+  setInterval(updateClock, 1000);
+
+  // SocketIO alerts
+  const socket = io();
+  let alertEnabled = true;
+
+  socket.on('alert', function(data) {
+    // Show notification dot
+    document.getElementById('notif-dot').style.display = 'block';
+    // Update camera status
+    updateCamStatus(true);
+    // Play beep if alert
+    if (alertEnabled) playBeep();
+    // Call page handler if exists
+    if (typeof onAlertReceived === 'function') onAlertReceived(data);
+  });
+
+  function updateCamStatus(active) {
+    const pill = document.getElementById('cam-status-pill');
+    const text = document.getElementById('cam-status-text');
+    const badge = document.getElementById('live-badge');
+    if (active) {
+      pill.className = 'header-status online';
+      text.textContent = 'Camera Live';
+      if (badge) badge.style.display = 'flex';
+    } else {
+      pill.className = 'header-status offline';
+      text.textContent = 'Camera Offline';
+      if (badge) badge.style.display = 'none';
+    }
+  }
+
+  // Beep using Web Audio API
+  function playBeep() {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const oscillator = ctx.createOscillator();
+      const gainNode = ctx.createGain();
+      oscillator.connect(gainNode);
+      gainNode.connect(ctx.destination);
+      oscillator.type = 'sine';
+      oscillator.frequency.setValueAtTime(880, ctx.currentTime);
+      gainNode.gain.setValueAtTime(0.3, ctx.currentTime);
+      gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
+      oscillator.start(ctx.currentTime);
+      oscillator.stop(ctx.currentTime + 0.4);
+    } catch(e) {}
+  }
+
+  {% if camera_active is defined and camera_active %}
+  updateCamStatus(true);
+  {% endif %}
+</script>
+{% block extra_scripts %}{% endblock %}
+</body>
+</html>
