@@ -23,3 +23,9 @@ runs/
 # Misc
 .DS_Store
 *.log
+
+# Application Data & Environments
+.venv/
+app/static/processed/
+app/static/uploads/
+!app/static/uploads/.gitkeep
