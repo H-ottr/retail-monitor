@@ -73,7 +73,7 @@
         <option value="Crowd Formation">Crowd Formation</option>
       </select>
       <input type="date" id="dateFilter" onchange="applyFilters()"/>
-      <button class="btn btn-outline" onclick="clearFilters()"><i class="fas fa-xmark"></i> Clear</button>
+      <button class="btn btn-outline" style="color:var(--danger); border-color:var(--danger);" onclick="confirmClearAll()"><i class="fas fa-trash"></i> Clear</button>
     </div>
 
     {% if incidents %}
@@ -147,6 +147,36 @@
 
 {% block extra_scripts %}
 <script>
+  function confirmClearAll() {
+    if (confirm("Are you sure you want to clear all incidents from the database? This action cannot be undone.")) {
+      fetch('/api/reset-data', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ what: 'incidents' })
+      })
+      .then(async response => {
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(`HTTP ${response.status}: ${text}`);
+        }
+        return response.json();
+      })
+      .then(data => {
+        if (data.status === 'reset') {
+          window.location.reload();
+        } else {
+          alert('Error clearing data: ' + JSON.stringify(data));
+        }
+      })
+      .catch(error => {
+        console.error('Error:', error);
+        alert('An error occurred while clearing data:\n' + error.message);
+      });
+    }
+  }
+
   function applyFilters() {
     const search = document.getElementById('searchInput').value.toLowerCase();
     const behavior = document.getElementById('behaviorFilter').value;

@@ -674,18 +674,6 @@ def init_db():
 
 
 # ─────────────────────────────────────────
-# Entry Point
-# ─────────────────────────────────────────
-if __name__ == "__main__":
-    os.makedirs(os.path.join(BASE_DIR, "static", "uploads", "incidents"), exist_ok=True)
-    os.makedirs(os.path.join(BASE_DIR, "static", "processed"), exist_ok=True)
-    init_db()
-    load_model()
-    print("\n[✓] Starting Retail Monitor on http://localhost:5000\n")
-    socketio.run(app, host="0.0.0.0", port=5000, debug=False)
-
-
-# ─────────────────────────────────────────
 # NEW FEATURES
 # ─────────────────────────────────────────
 
@@ -770,3 +758,17 @@ def video_incidents(filename):
         "confidence": i.confidence,
         "is_anomaly": i.is_anomaly,
     } for i in incidents])
+
+
+# ─────────────────────────────────────────
+# Entry Point
+# ─────────────────────────────────────────
+if __name__ == "__main__":
+    os.makedirs(os.path.join(BASE_DIR, "static", "uploads", "incidents"), exist_ok=True)
+    os.makedirs(os.path.join(BASE_DIR, "static", "processed"), exist_ok=True)
+    init_db()
+    load_model()
+    print("\n[✓] Starting Retail Monitor on http://localhost:5000\n")
+    socketio.run(app, host="0.0.0.0", port=5000, debug=False)
+
+
