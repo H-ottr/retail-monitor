@@ -194,6 +194,11 @@
   track.style.background = 'var(--accent)'; thumb.style.left = '23px';
 
   function startCamera() {
+    const btn = document.getElementById('btnStart');
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Starting...';
+    btn.disabled = true;
+
     fetch('/api/camera/start', {method:'POST'})
       .then(r => r.json())
       .then(d => {
@@ -201,9 +206,15 @@
           showVideo();
         } else {
           alert('Error: ' + (d.message || 'Cannot start camera'));
+          btn.innerHTML = originalText;
+          btn.disabled = false;
         }
       })
-      .catch(() => alert('Failed to connect to server'));
+      .catch(() => {
+        alert('Failed to connect to server');
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+      });
   }
 
   function showVideo() {
@@ -212,7 +223,9 @@
     vid.src = '/video_feed?' + Date.now();
     vid.style.display = 'block';
     document.getElementById('liveBadge').style.display = 'flex';
-    document.getElementById('btnStart').disabled = true;
+    const btn = document.getElementById('btnStart');
+    btn.innerHTML = '<i class="fas fa-play"></i> Start Camera';
+    btn.disabled = true;
     document.getElementById('btnStop').disabled = false;
     document.getElementById('btnPause').disabled = false;
     document.getElementById('btnSnap').disabled = false;
