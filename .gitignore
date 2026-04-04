@@ -29,3 +29,5 @@ runs/
 app/static/processed/
 app/static/uploads/
 !app/static/uploads/.gitkeep
+
+*.db
