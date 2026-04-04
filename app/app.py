@@ -9,6 +9,11 @@ import cv2
 import json
 import time
 import threading
+
+import torch
+original_load = torch.load
+torch.load = lambda *a, **kw: original_load(*a, **dict(kw, weights_only=False))
+
 import numpy as np
 from datetime import datetime, timedelta
 from flask import (Flask, render_template, request, redirect,
@@ -39,7 +44,7 @@ socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
 # ─────────────────────────────────────────
 # YOLOv8 Model Loading
 # ─────────────────────────────────────────
-MODEL_PATH = os.path.join(PROJECT_ROOT, "model", "best.pt")
+MODEL_PATH = os.path.join(PROJECT_ROOT, "yolov8n.pt")
 model = None
 model_lock = threading.Lock()
 
@@ -71,7 +76,7 @@ def load_model():
                 model = YOLO(MODEL_PATH)
             print(f"[✓] Model loaded: {MODEL_PATH}")
         else:
-            print(f"[!] Model not found at {MODEL_PATH}. Using YOLOv8n pretrained (person detection only).")
+            print(f"[!] Model not found at {MODEL_PATH}. Using yolov8n.pt pretrained for maximum speed.")
             with model_lock:
                 model = YOLO("yolov8n.pt")
     except Exception as e:
@@ -129,7 +134,11 @@ camera_state = {
 }
 
 output_frame = None
+latest_raw_frame = None
 output_lock = threading.Lock()
+
+# Tracking history state map {track_id: {"history": [(x,y,time), ...], "start_time": time.time()}}
+track_history = {}
 
 
 def log_activity(action, user="System", category="System"):
@@ -160,48 +169,146 @@ def save_incident(behavior, confidence, frame=None):
         db.session.commit()
 
 
-def process_frame(frame):
-    """Run YOLOv8 inference on a frame and draw results."""
-    global model
+def process_frame(frame, custom_track_history=None, current_time_override=None):
+    """Run YOLOv8 tracking on a frame, calculate behaviors, and draw results."""
+    global model, track_history
     detections = []
 
     if model is None:
         return frame, detections
+        
+    # Use provided history or default to global
+    history_dict = custom_track_history if custom_track_history is not None else track_history
 
     try:
+        # We track person=0, backpack=24, handbag=26, suitcase=27
         with model_lock:
-            results = model(frame, conf=0.4, iou=0.45, verbose=False)
+            results = model.track(frame, persist=True, conf=0.4, iou=0.45, classes=[0, 24, 26, 27], verbose=False)
+
+        current_time = current_time_override if current_time_override is not None else time.time()
+        active_ids = set()
+        person_centroids = [] # For crowd detection
 
         for result in results:
             boxes = result.boxes
-            if boxes is None:
+            if boxes is None or boxes.id is None:
                 continue
+                
             for box in boxes:
                 cls_id = int(box.cls[0])
                 conf = float(box.conf[0])
+                track_id = int(box.id[0]) if box.id is not None else -1
                 x1, y1, x2, y2 = map(int, box.xyxy[0])
+                
+                cx, cy = (x1 + x2) // 2, (y1 + y2) // 2
+                
+                if cls_id == 0 and track_id != -1: # Person logic
+                    active_ids.add(track_id)
+                    person_centroids.append((cx, cy))
+                    
+                    if track_id not in history_dict:
+                        history_dict[track_id] = {"history": [(cx, cy, current_time)], "start_time": current_time}
+                    
+                    history = history_dict[track_id]["history"]
+                    history.append((cx, cy, current_time))
+                    if len(history) > 30: # keep last 30 frames
+                        history.pop(0)
+                        
+                    # Calculate velocity (Running)
+                    velocity = 0
+                    if len(history) >= 10:
+                        old_cx, old_cy, old_time = history[-10]
+                        dist = np.sqrt((cx - old_cx)**2 + (cy - old_cy)**2)
+                        time_diff = current_time - old_time
+                        velocity = dist / time_diff if time_diff > 0 else 0
+                        
+                    # Calculate loitering
+                    total_time_present = current_time - history_dict[track_id]["start_time"]
+                    
+                    # Compute max distance moved over last 5 seconds if available
+                    recent_dist = 0
+                    if len(history) >= 20:
+                        first_cx, first_cy, _ = history[0]
+                        recent_dist = np.sqrt((cx - first_cx)**2 + (cy - first_cy)**2)
+                    
+                    # Behavior rules
+                    behavior = "Normal"
+                    if velocity > 150: # Threshold for running (pixels per second)
+                        behavior = "Running"
+                    elif total_time_present > 5.0 and len(history) >= 20 and recent_dist < 50:
+                        behavior = "Loitering"
+                        
+                    is_anomaly = (behavior != "Normal")
+                    color = BEHAVIOR_COLORS.get(behavior, (34, 197, 94))
+                    
+                    # Draw bounding box for person
+                    thickness = 3 if is_anomaly else 2
+                    cv2.rectangle(frame, (x1, y1), (x2, y2), color, thickness)
 
-                behavior = BEHAVIOR_CLASSES.get(cls_id, f"Class_{cls_id}")
-                color = BEHAVIOR_COLORS.get(behavior, (100, 100, 255))
-                is_anomaly = cls_id in ANOMALY_CLASSES
+                    label = f"{behavior} id:{track_id} {conf:.0%}"
+                    (lw, lh), bl = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.55, 2)
+                    cv2.rectangle(frame, (x1, y1 - lh - bl - 6), (x1 + lw + 6, y1), color, -1)
+                    cv2.putText(frame, label, (x1 + 3, y1 - bl - 2), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 2)
 
-                # Draw bounding box
-                thickness = 3 if is_anomaly else 2
-                cv2.rectangle(frame, (x1, y1), (x2, y2), color, thickness)
+                    detections.append({
+                        "id": track_id,
+                        "cx": cx,
+                        "cy": cy,
+                        "bbox": [x1, y1, x2, y2],
+                        "behavior": behavior,
+                        "confidence": round(conf, 3),
+                        "is_anomaly": is_anomaly,
+                    })
+                
+                elif cls_id in [24, 26, 27]: # Bags (Suspicious items)
+                    cv2.rectangle(frame, (x1, y1), (x2, y2), (200, 200, 200), 1)
 
-                # Draw label background
-                label = f"{behavior} {conf:.0%}"
+        # Post-process for Crowd Formation
+        crowd_flags = [False] * len(person_centroids)
+        for i in range(len(person_centroids)):
+            close_count = 0
+            for j in range(len(person_centroids)):
+                if i != j:
+                    dist = np.sqrt((person_centroids[i][0] - person_centroids[j][0])**2 + (person_centroids[i][1] - person_centroids[j][1])**2)
+                    if dist < 120: # Pixel distance threshold for crowd
+                        close_count += 1
+            if close_count >= 2: # 3+ people close = crowd
+                crowd_flags[i] = True
+                
+        # Update behavior if part of crowd
+        person_detections = [d for d in detections if 'cx' in d]
+        for i, det in enumerate(person_detections):
+            if crowd_flags[i]:
+                det["behavior"] = "Crowd Formation"
+                det["is_anomaly"] = True
+                x1, y1, x2, y2 = det["bbox"]
+                cv2.rectangle(frame, (x1, y1), (x2, y2), BEHAVIOR_COLORS["Crowd Formation"], 3)
+                label = f"Crowd Formation id:{det['id']} {det['confidence']:.0%}"
                 (lw, lh), bl = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.55, 2)
-                cv2.rectangle(frame, (x1, y1 - lh - bl - 6), (x1 + lw + 6, y1), color, -1)
-                cv2.putText(frame, label, (x1 + 3, y1 - bl - 2),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 2)
+                cv2.rectangle(frame, (x1, y1 - lh - bl - 6), (x1 + lw + 6, y1), BEHAVIOR_COLORS["Crowd Formation"], -1)
+                cv2.putText(frame, label, (x1 + 3, y1 - bl - 2), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 2)
 
-                detections.append({
-                    "behavior": behavior,
-                    "confidence": round(conf, 3),
-                    "bbox": [x1, y1, x2, y2],
-                    "is_anomaly": is_anomaly,
-                })
+        # Very basic check for Suspicious Shelf Interaction (Bag overlap with a Person who is Loitering)
+        # Assuming bags are not explicitly tracked, we just use bounding box overlap
+        for det in detections:
+            if det["behavior"] == "Loitering":
+                px1, py1, px2, py2 = det["bbox"]
+                for b_box in (b.xyxy[0] for r in results for b in r.boxes if int(b.cls[0]) in [24,26,27]):
+                    bx1, by1, bx2, by2 = map(int, b_box)
+                    if px2 > bx1 and px1 < bx2 and py2 > by1 and py1 < by2:
+                        det["behavior"] = "Suspicious Shelf Interaction"
+                        cv2.rectangle(frame, (px1, py1), (px2, py2), BEHAVIOR_COLORS["Suspicious Shelf Interaction"], 3)
+                        label = f"Suspicious Activity id:{det['id']} {det['confidence']:.0%}"
+                        (lw, lh), bl = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.55, 2)
+                        cv2.rectangle(frame, (px1, py1 - lh - bl - 6), (px1 + lw + 6, py1), BEHAVIOR_COLORS["Suspicious Shelf Interaction"], -1)
+                        cv2.putText(frame, label, (px1 + 3, py1 - bl - 2), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 2)
+                        break
+
+        # Remove stale tracks
+        for tid in list(history_dict.keys()):
+            if tid not in active_ids:
+                if len(history_dict[tid]["history"]) == 0 or (current_time - history_dict[tid]["history"][-1][2] > 2.0):
+                    del history_dict[tid]
 
     except Exception as e:
         print(f"[Detection error] {e}")
@@ -209,28 +316,35 @@ def process_frame(frame):
     return frame, detections
 
 
-def camera_thread():
-    global output_frame, camera_state
-    last_save = {}
-    frame_count = 0
-
+def frame_grabber_thread():
+    """Tight loop to constantly empty the camera buffer and grab the absolute freshest frame."""
+    global latest_raw_frame
     while camera_state["active"]:
-        if camera_state["paused"]:
-            time.sleep(0.1)
-            continue
-
         with camera_state["lock"]:
             cap = camera_state["cap"]
             if cap is None or not cap.isOpened():
                 break
             ret, frame = cap.read()
+            if ret:
+                latest_raw_frame = frame
+        time.sleep(0.01) # Small sleep to prevent 100% CPU lock
 
-        if not ret:
+
+def camera_thread():
+    global output_frame, camera_state, latest_raw_frame
+    last_save = {}
+    frame_count = 0
+
+    while camera_state["active"]:
+        if camera_state["paused"] or latest_raw_frame is None:
             time.sleep(0.05)
             continue
 
         frame_count += 1
-        annotated, detections = process_frame(frame.copy())
+        # Grab the absolute freshest frame (bypassing any backlog)
+        frame_to_process = latest_raw_frame.copy()
+        
+        annotated, detections = process_frame(frame_to_process)
 
         # Overlay timestamp
         ts = datetime.now().strftime("%Y-%m-%d  %H:%M:%S")
@@ -247,7 +361,7 @@ def camera_thread():
                 # Save incident every 5 seconds per behavior type
                 if now - last_save.get(beh, 0) > 5:
                     last_save[beh] = now
-                    save_incident(beh, det["confidence"], frame)
+                    save_incident(beh, det["confidence"], frame_to_process)
                     camera_state["detection_count"] += 1
 
         # Save normal occasionally
@@ -262,10 +376,11 @@ def camera_thread():
 
         # Update global frame
         with output_lock:
-            _, buffer = cv2.imencode(".jpg", annotated, [cv2.IMWRITE_JPEG_QUALITY, 80])
+            _, buffer = cv2.imencode(".jpg", annotated, [cv2.IMWRITE_JPEG_QUALITY, 70])
             output_frame = buffer.tobytes()
 
-        time.sleep(0.03)  # ~30 FPS
+        # Let CPU breathe, YOLO takes time so we don't need artificial sleep, but just in case
+        time.sleep(0.01)
 
 
 def gen_frames():
@@ -395,15 +510,28 @@ def settings():
 def camera_start():
     if camera_state["active"]:
         return jsonify({"status": "already_running"})
-    cap = cv2.VideoCapture(0)
+    
+    # Use cv2.CAP_DSHOW for INSTANT camera connection on Windows
+    cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+    # Decrease resolution and set buffer to 1 to drastically speed up processing and prevent frame buildup / lag
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+
     if not cap.isOpened():
         return jsonify({"status": "error", "message": "Cannot open camera"}), 500
     camera_state["active"] = True
     camera_state["paused"] = False
     camera_state["cap"] = cap
-    t = threading.Thread(target=camera_thread, daemon=True)
-    camera_state["thread"] = t
-    t.start()
+    
+    # Start both threads to completely eliminate lag
+    t_grab = threading.Thread(target=frame_grabber_thread, daemon=True)
+    t_process = threading.Thread(target=camera_thread, daemon=True)
+    
+    camera_state["thread"] = t_process
+    t_grab.start()
+    t_process.start()
+    
     log_activity("Camera started", user=session.get("username"), category="Camera")
     return jsonify({"status": "started"})
 
@@ -536,10 +664,17 @@ def process_video_file(input_path, output_path, out_name):
         total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         print(f"[Video] {w}x{h} @ {fps}fps, {total} frames")
 
+        # Resize video to a max of 640 width to drastically speed up AI and encoding
+        target_w = 640
+        if w > target_w:
+            target_h = int(h * (target_w / w))
+        else:
+            target_w, target_h = w, h
+
         # Write annotated frames to temp file
         temp_path = output_path.replace(".mp4", "_tmp.mp4")
         fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-        out = cv2.VideoWriter(temp_path, fourcc, fps, (w, h))
+        out = cv2.VideoWriter(temp_path, fourcc, fps, (target_w, target_h))
 
         if not out.isOpened():
             raise Exception(f"VideoWriter failed to open: {temp_path}")
@@ -547,12 +682,29 @@ def process_video_file(input_path, output_path, out_name):
         frame_count = 0
         last_save = {}
         video_incidents = []
+        video_track_history = {} # Isolated tracking state
+        
+        # We will process 1 frame and repeat it for performance (2x speed jump)
+        skip_factor = 2 if fps >= 24 else 1
+        last_annotated = None
 
         while cap.isOpened():
             ret, frame = cap.read()
             if not ret:
                 break
-            annotated, detections = process_frame(frame)
+            
+            frame = cv2.resize(frame, (target_w, target_h))
+            
+            # Calculate simulated video time for accurate behavior detection
+            simulated_time = frame_count / fps
+
+            if frame_count % skip_factor == 0:
+                annotated, detections = process_frame(frame, custom_track_history=video_track_history, current_time_override=simulated_time)
+                last_annotated = annotated
+            else:
+                # Add tiny motion blur or just reuse to avoid heavy YOLO calculation
+                annotated = last_annotated if last_annotated is not None else frame
+
             out.write(annotated)
             frame_count += 1
 
