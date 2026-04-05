@@ -45,7 +45,9 @@ socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
 # YOLOv8 Model Loading
 # ─────────────────────────────────────────
 MODEL_PATH = os.path.join(PROJECT_ROOT, "yolov8n.pt")
+SUSPICIOUS_MODEL_PATH = os.path.join(PROJECT_ROOT, "model", "best.pt")
 model = None
+suspicious_model = None
 model_lock = threading.Lock()
 
 BEHAVIOR_CLASSES = {
@@ -68,7 +70,7 @@ BEHAVIOR_COLORS = {
 
 
 def load_model():
-    global model
+    global model, suspicious_model
     try:
         from ultralytics import YOLO
         if os.path.exists(MODEL_PATH):
@@ -79,9 +81,19 @@ def load_model():
             print(f"[!] Model not found at {MODEL_PATH}. Using yolov8n.pt pretrained for maximum speed.")
             with model_lock:
                 model = YOLO("yolov8n.pt")
+                
+        if os.path.exists(SUSPICIOUS_MODEL_PATH):
+            with model_lock:
+                suspicious_model = YOLO(SUSPICIOUS_MODEL_PATH)
+            print(f"[✓] Suspicious model loaded: {SUSPICIOUS_MODEL_PATH}")
+        else:
+            print(f"[!] Suspicious model not found at {SUSPICIOUS_MODEL_PATH}.")
+            suspicious_model = None
+            
     except Exception as e:
         print(f"[✗] Model load error: {e}")
         model = None
+        suspicious_model = None
 
 
 # ─────────────────────────────────────────
@@ -171,7 +183,7 @@ def save_incident(behavior, confidence, frame=None):
 
 def process_frame(frame, custom_track_history=None, current_time_override=None):
     """Run YOLOv8 tracking on a frame, calculate behaviors, and draw results."""
-    global model, track_history
+    global model, suspicious_model, track_history
     detections = []
 
     if model is None:
@@ -207,12 +219,21 @@ def process_frame(frame, custom_track_history=None, current_time_override=None):
                     person_centroids.append((cx, cy))
                     
                     if track_id not in history_dict:
-                        history_dict[track_id] = {"history": [(cx, cy, current_time)], "start_time": current_time}
+                        history_dict[track_id] = {
+                            "history": [], 
+                            "start_time": current_time,
+                            "suspicious_buffer": [],
+                            "suspicious_cooldown": 0
+                        }
                     
                     history = history_dict[track_id]["history"]
                     history.append((cx, cy, current_time))
+                    history_dict[track_id]["suspicious_buffer"].append(0)
+                    
                     if len(history) > 30: # keep last 30 frames
                         history.pop(0)
+                    if len(history_dict[track_id]["suspicious_buffer"]) > 30:
+                        history_dict[track_id]["suspicious_buffer"].pop(0)
                         
                     # Calculate velocity (Running)
                     velocity = 0
@@ -288,21 +309,97 @@ def process_frame(frame, custom_track_history=None, current_time_override=None):
                 cv2.rectangle(frame, (x1, y1 - lh - bl - 6), (x1 + lw + 6, y1), BEHAVIOR_COLORS["Crowd Formation"], -1)
                 cv2.putText(frame, label, (x1 + 3, y1 - bl - 2), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 2)
 
-        # Very basic check for Suspicious Shelf Interaction (Bag overlap with a Person who is Loitering)
-        # Assuming bags are not explicitly tracked, we just use bounding box overlap
-        for det in detections:
-            if det["behavior"] == "Loitering":
-                px1, py1, px2, py2 = det["bbox"]
-                for b_box in (b.xyxy[0] for r in results for b in r.boxes if int(b.cls[0]) in [24,26,27]):
-                    bx1, by1, bx2, by2 = map(int, b_box)
-                    if px2 > bx1 and px1 < bx2 and py2 > by1 and py1 < by2:
-                        det["behavior"] = "Suspicious Shelf Interaction"
-                        cv2.rectangle(frame, (px1, py1), (px2, py2), BEHAVIOR_COLORS["Suspicious Shelf Interaction"], 3)
-                        label = f"Suspicious Activity id:{det['id']} {det['confidence']:.0%}"
+        # Check for Suspicious Shelf Interaction using the custom model, if available
+        if suspicious_model is not None and len(person_detections) > 0:
+            if not hasattr(process_frame, "counter"):
+                process_frame.counter = 0
+            process_frame.counter += 1
+
+            # Only run heavy suspicious model 1 out of every 3 frames (~10fps) to prevent lag
+            if process_frame.counter % 3 == 0 or not hasattr(process_frame, "last_suspicious"):
+                with model_lock:
+                    suspicious_results = suspicious_model.predict(frame, conf=0.4, verbose=False)
+                process_frame.last_suspicious = suspicious_results
+            else:
+                suspicious_results = process_frame.last_suspicious
+            
+            for result in suspicious_results:
+                if result.boxes is None: continue
+                for box in result.boxes:
+                    conf = float(box.conf[0])
+                    sx1, sy1, sx2, sy2 = map(int, box.xyxy[0])
+                    
+                    best_iou = 0
+                    associated_det = None
+                    
+                    # Associate bounding box with nearest person
+                    for det in person_detections:
+                        px1, py1, px2, py2 = det["bbox"]
+                        ix1 = max(sx1, px1)
+                        iy1 = max(sy1, py1)
+                        ix2 = min(sx2, px2)
+                        iy2 = min(sy2, py2)
+                        inter_area = max(0, ix2 - ix1) * max(0, iy2 - iy1)
+                        if inter_area > best_iou:
+                            best_iou = inter_area
+                            associated_det = det
+                                
+                    if associated_det:
+                        tid = associated_det["id"]
+                        if tid in history_dict and len(history_dict[tid]["suspicious_buffer"]) > 0:
+                            history_dict[tid]["suspicious_buffer"][-1] = 1
+                    else:
+                        # Draw standalone suspicious behavior
+                        cv2.rectangle(frame, (sx1, sy1), (sx2, sy2), BEHAVIOR_COLORS["Suspicious Shelf Interaction"], 3)
+                        label = f"Suspicious Activity {conf:.0%}"
                         (lw, lh), bl = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.55, 2)
-                        cv2.rectangle(frame, (px1, py1 - lh - bl - 6), (px1 + lw + 6, py1), BEHAVIOR_COLORS["Suspicious Shelf Interaction"], -1)
-                        cv2.putText(frame, label, (px1 + 3, py1 - bl - 2), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 2)
-                        break
+                        cv2.rectangle(frame, (sx1, sy1 - lh - bl - 6), (sx1 + lw + 6, sy1), BEHAVIOR_COLORS["Suspicious Shelf Interaction"], -1)
+                        cv2.putText(frame, label, (sx1 + 3, sy1 - bl - 2), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 2)
+                        detections.append({
+                            "id": -1,
+                            "bbox": [sx1, sy1, sx2, sy2],
+                            "behavior": "Suspicious Shelf Interaction",
+                            "confidence": round(conf, 3),
+                            "is_anomaly": True,
+                        })
+        else:
+            # Fallback to very basic check for Suspicious Shelf Interaction (Bag overlap with a Person who is Loitering)
+            # Assuming bags are not explicitly tracked, we just use bounding box overlap
+            for det in detections:
+                if det["behavior"] == "Loitering":
+                    px1, py1, px2, py2 = det["bbox"]
+                    for b_box in (b.xyxy[0] for r in results for b in r.boxes if int(b.cls[0]) in [24,26,27]):
+                        bx1, by1, bx2, by2 = map(int, b_box)
+                        if px2 > bx1 and px1 < bx2 and py2 > by1 and py1 < by2:
+                            tid = det.get("id", -1)
+                            if tid in history_dict and len(history_dict[tid]["suspicious_buffer"]) > 0:
+                                history_dict[tid]["suspicious_buffer"][-1] = 1
+                            break
+
+        # Process Suspicious Buffer Temporal Voting and Decay
+        for det in detections:
+            tid = det.get("id", -1)
+            if tid in history_dict:
+                buf = history_dict[tid]["suspicious_buffer"]
+                if len(buf) > 0:
+                    ratio = sum(buf) / len(buf)
+                    
+                    if ratio >= 0.5:
+                        history_dict[tid]["suspicious_cooldown"] = 60
+                        
+                    if history_dict[tid].get("suspicious_cooldown", 0) > 0:
+                        det["behavior"] = "Suspicious Shelf Interaction"
+                        det["is_anomaly"] = True
+                        if ratio < 0.5:
+                            history_dict[tid]["suspicious_cooldown"] -= 1
+                            
+                        # Overwrite existing person box with Suspicious Activity styling
+                        ax1, ay1, ax2, ay2 = det["bbox"]
+                        cv2.rectangle(frame, (ax1, ay1), (ax2, ay2), BEHAVIOR_COLORS["Suspicious Shelf Interaction"], 3)
+                        label = f"Suspicious Activity id:{tid} {det['confidence']:.0%}"
+                        (lw, lh), bl = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.55, 2)
+                        cv2.rectangle(frame, (ax1, ay1 - lh - bl - 6), (ax1 + lw + 6, ay1), BEHAVIOR_COLORS["Suspicious Shelf Interaction"], -1)
+                        cv2.putText(frame, label, (ax1 + 3, ay1 - bl - 2), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 2)
 
         # Remove stale tracks
         for tid in list(history_dict.keys()):
