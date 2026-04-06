@@ -127,6 +127,19 @@
     </div>
   </div>
 </div>
+
+<!-- Previously Analyzed Videos -->
+<div class="card" style="margin-top: 24px;">
+  <div class="card-header">
+    <i class="fas fa-history" style="color:var(--accent-teal)"></i>
+    <h3>Previously Analyzed Videos</h3>
+  </div>
+  <div class="card-body">
+    <div id="processed-videos-list">
+      <div style="text-align:center;color:var(--muted);padding:20px;">Loading...</div>
+    </div>
+  </div>
+</div>
 {% endblock %}
 
 {% block extra_scripts %}
@@ -211,6 +224,7 @@
       document.getElementById('downloadBtn').download = data.filename;
       document.getElementById('result-placeholder').style.display = 'none';
       document.getElementById('result-video').style.display = 'block';
+      fetchProcessedVideos();
     }, 800);
   });
 
@@ -227,6 +241,75 @@
     document.getElementById('outputVideo').src = '';
     document.getElementById('fileInput').value = '';
     setProgress(0);
+  }
+
+  document.addEventListener("DOMContentLoaded", fetchProcessedVideos);
+
+  function fetchProcessedVideos() {
+    fetch('/api/processed-videos')
+      .then(r => r.json())
+      .then(data => {
+        const container = document.getElementById('processed-videos-list');
+        if (!data.videos || data.videos.length === 0) {
+          container.innerHTML = '<div style="text-align:center;color:var(--muted);padding:20px;">No previously analyzed videos found.</div>';
+          return;
+        }
+        
+        let html = '<div style="display: flex; flex-direction: column;">';
+        
+        data.videos.forEach(v => {
+          html += `
+            <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--border);">
+              <div>
+                <div style="font-weight: 600; font-size: 14px;">${v.filename}</div>
+                <div style="font-size: 12px; color: var(--muted);">${v.size_mb} MB • ${v.date}</div>
+              </div>
+              <div style="display: flex; gap: 8px;">
+                <button class="btn btn-primary" onclick="playProcessedVideo('${v.filename}', '${v.url}')" style="padding: 6px 12px; font-size: 13px;">
+                  <i class="fas fa-play"></i> Play
+                </button>
+                <button class="btn btn-outline" onclick="deleteProcessedVideo('${v.filename}')" style="padding: 6px 12px; font-size: 13px; color: #ef4444; border-color: #ef4444;">
+                  <i class="fas fa-trash"></i>
+                </button>
+              </div>
+            </div>
+          `;
+        });
+        html += '</div>';
+        container.innerHTML = html;
+      })
+      .catch(e => {
+        document.getElementById('processed-videos-list').innerHTML = '<div style="color:#ef4444; padding: 20px; text-align: center;">Error loading videos.</div>';
+      });
+  }
+
+  function playProcessedVideo(filename, url) {
+    document.getElementById('result-placeholder').style.display = 'none';
+    document.getElementById('result-video').style.display = 'block';
+    const vid = document.getElementById('outputVideo');
+    vid.src = url;
+    document.getElementById('downloadBtn').href = url;
+    document.getElementById('downloadBtn').download = filename;
+    vid.play().catch(e => console.log('Auto-play prevented:', e));
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function deleteProcessedVideo(filename) {
+    if(!confirm('Are you sure you want to delete ' + filename + '?')) return;
+    fetch('/api/processed-videos/' + filename, { method: 'DELETE' })
+      .then(r => r.json())
+      .then(d => {
+        if (d.status === 'deleted') {
+          fetchProcessedVideos();
+          const vid = document.getElementById('outputVideo');
+          if (vid.src.endsWith('/static/processed/' + filename)) {
+             resetUpload();
+          }
+        } else {
+          alert('Error deleting video');
+        }
+      })
+      .catch(e => alert('Error deleting video'));
   }
 </script>
 {% endblock %}

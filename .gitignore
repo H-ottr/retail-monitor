@@ -31,3 +31,5 @@ app/static/uploads/
 !app/static/uploads/.gitkeep
 
 *.db
+
+.__temp__
